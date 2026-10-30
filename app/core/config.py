@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATABASE_URL: str = Field(alias="DATABASE_URL")
+    JWT_SECRET_KEY: str = Field(alias="SECRET_KEY")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    ALGORITHM: str = Field(alias="ALGORITHM")
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

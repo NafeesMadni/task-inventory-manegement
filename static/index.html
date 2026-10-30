@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Management Authentication</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+
+    <main class="container">
+
+        <h1>Welcome</h1>
+        <p>Login or create your account</p>
+
+        <div class="tabs">
+            <button onclick="showForm('login')">Login</button>
+            <button onclick="showForm('signup')">Signup</button>
+        </div>
+
+        <form id="login-form">
+            <h2>Login</h2>
+
+            <input type="email" id="login-email" placeholder="Email" required>
+
+            <input type="password" id="login-password" placeholder="Password" required>
+
+            <button type="submit">Login</button>
+        </form>
+
+        <form id="signup-form" hidden>
+            <h2>Create Account</h2>
+
+            <input type="text" id="signup-username" placeholder="Username" required>
+
+            <input type="email" id="signup-email" placeholder="Email" required>
+
+            <input type="password" id="signup-password" placeholder="Password" required>
+
+            <button type="submit">Signup</button>
+        </form>
+
+        <p id="message"></p>
+
+    </main>
+
+    <script src="/static/js/auth.js"></script>
+</body>
+
+</html>
