@@ -6,9 +6,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.jwt import JWTProvider
 from app.database.db import get_sessionmaker
 from app.database.models import User
+from app.services.auth_manager import JWTProvider
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:

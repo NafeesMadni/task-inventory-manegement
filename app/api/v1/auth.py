@@ -1,35 +1,18 @@
-import bcrypt
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from redis_fastapi import RateLimitBackendDep
 from sqlalchemy import select
 
 from app.api.v1.types import LoginRequest, SignupRequest, UserResponse
 from app.core.config import get_settings
-from app.core.jwt import JWTProvider
 from app.database.models import User
 from app.dependencies import DBSession, GetCurrentUser
+from app.services.auth_manager import AuthProvider, JWTProvider
 
 
 class Auth:
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/auth", tags=["Authentication Endpoint"])
         self._register_routes()
-
-    def _get_hashed_password(self, plain_text_password: str) -> str:
-        plain_password_bytes = plain_text_password.encode("utf-8")
-
-        hashed_password = bcrypt.hashpw(
-            plain_password_bytes,
-            bcrypt.gensalt(14),
-        )
-
-        return hashed_password.decode("utf-8")
-
-    def _check_password(self, plain_text_password: str, hashed_password: str) -> bool:
-        plain_password_bytes = plain_text_password.encode("utf-8")
-        hashed_password_bytes = hashed_password.encode("utf-8")
-
-        return bcrypt.checkpw(plain_password_bytes, hashed_password_bytes)
 
     def _register_routes(self) -> None:
         self.router.add_api_route(
@@ -54,7 +37,7 @@ class Auth:
         )
 
     async def signup(
-        self, payload: SignupRequest, response: Response, session: DBSession
+        self, payload: SignupRequest, session: DBSession, response: Response
     ) -> UserResponse:
         existing_user = await session.scalar(
             select(User).where(
@@ -70,7 +53,7 @@ class Auth:
         user = User(
             username=payload.username,
             email=str(payload.email),
-            hashed_password=self._get_hashed_password(payload.password),
+            hashed_password=AuthProvider.get_hashed_password(payload.password),
         )
 
         session.add(user)
@@ -114,7 +97,9 @@ class Auth:
             select(User).where(User.email == str(payload.email))
         )
 
-        if not user or not self._check_password(payload.password, user.hashed_password):
+        if not user or not AuthProvider.check_password(
+            payload.password, user.hashed_password
+        ):
             result = await limiter.hit(key, limit=5, window=WINDOW)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
