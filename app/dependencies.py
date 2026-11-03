@@ -4,10 +4,11 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.db import get_sessionmaker
-from app.database.models import User
+from app.database.models import User, get_user_loading_options
 from app.services.auth_manager import JWTProvider
 
 
@@ -35,7 +36,18 @@ async def get_current_user(
     payload = JWTProvider.decode_access_token(token)
     user_id = int(payload["sub"])
 
-    user = await session.get(User, user_id)
+    role = await session.scalar(select(User.role).where(User.id == user_id))
+
+    # For already approved users of the system; Aka authroized users (Admin/Superisors/Developers)
+    if role:
+        user = await session.scalar(
+            select(User)
+            .options(*get_user_loading_options(role))
+            .where(User.id == user_id)
+        )
+    else:
+        # For users whose join request is either rejected or pending
+        user = await session.get(User, user_id)
 
     if user is None:
         response.delete_cookie(key="access_token")

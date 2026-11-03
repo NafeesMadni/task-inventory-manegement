@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import JoinRequestStatus, UserRole
 
 if TYPE_CHECKING:
@@ -15,6 +15,19 @@ if TYPE_CHECKING:
 
 class JoinRequest(Base):
     __tablename__ = "join_requests"
+
+    __table_args__ = (
+        enum_check_constraint(
+            UserRole,
+            "requested_role",
+            "ck_join_requests_requested_role",
+        ),
+        enum_check_constraint(
+            JoinRequestStatus,
+            "status",
+            "ck_join_requests_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 

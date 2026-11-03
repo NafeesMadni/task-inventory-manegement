@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import DeviceStatus
 
 if TYPE_CHECKING:
@@ -19,6 +19,14 @@ if TYPE_CHECKING:
 
 class Device(Base):
     __tablename__ = "devices"
+
+    __table_args__ = (
+        enum_check_constraint(
+            DeviceStatus,
+            "status",
+            "ck_devices_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 

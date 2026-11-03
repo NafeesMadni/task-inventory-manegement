@@ -17,7 +17,9 @@ def enum_column(enum_class, name: str) -> SAEnum:
     )
 
 
-def enum_check_constraint(enum_class, column_name: str, constraint_name: str):
+def enum_check_constraint(
+    enum_class, column_name: str, constraint_name: str
+) -> CheckConstraint:
     values = ", ".join(f"'{item.value}'" for item in enum_class)
 
     return CheckConstraint(

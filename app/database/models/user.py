@@ -12,7 +12,7 @@ from app.database.models import (
     NewRepairDevicesRequest,
     SupervisorDeveloper,
 )
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import UserRole
 
 if TYPE_CHECKING:
@@ -28,6 +28,11 @@ class User(Base):
             "role",
             unique=True,
             postgresql_where=text("role = 'admin'"),
+        ),
+        enum_check_constraint(
+            UserRole,
+            "role",
+            "ck_users_role",
         ),
     )
 
@@ -79,7 +84,7 @@ class User(Base):
         back_populates="requester", foreign_keys=[NewRepairDevicesRequest.requested_by]
     )
 
-    # Currently pending New/Repair/Available Devices requests that this user is responsible for approving
+    # Currently pending New/Repair/Available Devices requests that this user is responsible for approving (Only Admin/Supervisor)
     pending_device_requests: Mapped[list[NewRepairDevicesRequest]] = relationship(
         back_populates="pending_approver",
         foreign_keys=[NewRepairDevicesRequest.pending_by],
@@ -90,17 +95,17 @@ class User(Base):
         back_populates="assigned_to_user", foreign_keys=[DeviceAssignment.assigned_to]
     )
 
-    # All device assignments assigned by this user
+    # All device assignments assigned by this user (Only Admin/Supervisor)
     device_assignments_assigned_by: Mapped[list[DeviceAssignment]] = relationship(
         back_populates="assigned_by_user",
         foreign_keys=[DeviceAssignment.assigned_by],
     )
 
-    # All approvals made by this user
+    # All devices request approvals made by this user
     approvals: Mapped[list[RequestApproval]] = relationship(back_populates="approver")
 
-    # All join requests made by this user
-    join_requests: Mapped[list[JoinRequest]] = relationship(
+    # Join requests made by this user
+    join_requests: Mapped[JoinRequest] = relationship(
         back_populates="requester", foreign_keys=[JoinRequest.requested_by]
     )
 
@@ -113,35 +118,26 @@ class User(Base):
 def get_user_loading_options(role: UserRole):
     options = []
 
-    if role == UserRole.ADMIN:
+    if role == UserRole.ADMIN and role == UserRole.SUPERVISOR:
         options.extend([
+            selectinload(User.supervised_developers),
+            selectinload(User.supervisor_assignment),
             selectinload(User.login_history),
+            selectinload(User.device_requests),
+            selectinload(User.pending_device_requests),
+            selectinload(User.device_assignments),
+            selectinload(User.device_assignments_assigned_by),
+            selectinload(User.approvals),
             selectinload(User.join_requests),
             selectinload(User.received_join_requests),
-            selectinload(User.device_requests),
-            selectinload(User.pending_device_requests),
-            selectinload(User.device_assignments),
-            selectinload(User.approvals),
-            selectinload(User.developers),
-        ])
-
-    elif role == UserRole.SUPERVISOR:
-        options.extend([
-            selectinload(User.login_history),
-            selectinload(User.join_requests),
-            selectinload(User.device_requests),
-            selectinload(User.pending_device_requests),
-            selectinload(User.device_assignments),
-            selectinload(User.approvals),
-            selectinload(User.developers),
         ])
 
     elif role == UserRole.DEVELOPER:
         options.extend([
-            selectinload(User.supervisor),
+            selectinload(User.supervisor_assignment),
             selectinload(User.login_history),
-            selectinload(User.pending_device_requests),
-            selectinload(User.approvals),
+            selectinload(User.device_requests),
+            selectinload(User.join_requests),
         ])
 
     return options

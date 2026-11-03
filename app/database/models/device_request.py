@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Text, func, or_, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import DeviceRequestStatus, DeviceRequestType
 
 if TYPE_CHECKING:
@@ -29,6 +29,16 @@ class NewRepairDevicesRequest(Base):
                 text("type IN ('existing', 'repair') AND device_id IS NOT NULL"),
             ),
             name="ck_device_request_type_device",
+        ),
+        enum_check_constraint(
+            DeviceRequestType,
+            "type",
+            "ck_new_repair_devices_requests_type",
+        ),
+        enum_check_constraint(
+            DeviceRequestStatus,
+            "status",
+            "ck_new_repair_devices_requests_status",
         ),
     )
 

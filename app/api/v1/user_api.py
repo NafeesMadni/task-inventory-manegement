@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from redis_fastapi import RateLimitBackendDep
 from sqlalchemy import or_, select
+from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
     LoginRequest,
@@ -11,7 +14,7 @@ from app.api.v1.types import (
     UserResponse,
 )
 from app.core.config import get_settings
-from app.database.models import JoinRequest, User
+from app.database.models import JoinRequest, JoinRequestStatus, User
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
 
@@ -28,6 +31,12 @@ class UserAPI:
             methods=["POST"],
             response_model=UserResponse,
             status_code=status.HTTP_201_CREATED,
+        )
+        self.router.add_api_route(
+            "/grant-access",
+            endpoint=self.grant_access,
+            methods=["GET"],
+            status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
             "/supervisors",
@@ -122,6 +131,45 @@ class UserAPI:
 
         return UserResponse(id=user.id, username=user.username, email=user.email)
 
+    async def grant_access(
+        self,
+        join_request_id: Annotated[int, Query(...)],
+        grant: Annotated[bool, Query(...)],
+        user: GetCurrentUser,
+        session: DBSession,
+    ) -> None:
+        join_request = await session.scalar(
+            select(JoinRequest)
+            .options(selectinload(JoinRequest.requester))
+            .where(JoinRequest.id == join_request_id)
+        )
+        if not join_request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Request not found, please try again.",
+            )
+
+        if join_request.requested_from != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to manage this request.",
+            )
+        if join_request.status != JoinRequestStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This request has already been processed.",
+            )
+
+        if grant:
+            join_request.status = JoinRequestStatus.APPROVED
+            join_request.requester.role = join_request.requested_role
+        else:
+            join_request.status = JoinRequestStatus.REJECTED
+
+        await session.commit()
+
+        # Notify the requester about the rejection/approval
+
     async def fetch_supervisors(
         self, session: DBSession, response: Response
     ) -> list[SupervisorResponse]:
@@ -147,30 +195,64 @@ class UserAPI:
         key = f"login:{payload.email}:{address}"
 
         WINDOW = 900
-        limit = await limiter.peek(key, limit=5, window=WINDOW)
+        MAX_ATTEMPTS = 5
 
-        if limit.remaining == 0:
+        state = await limiter.peek(key, limit=MAX_ATTEMPTS, window=WINDOW)
+
+        if state.remaining == 0:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many failed login attempts, account temporarily locked.",
-                headers={"Retry-After": f"{limit.retry_after / 60:.2f} minutes"},
+                detail="Too many failed login attempts. Try again later.",
+                headers={"Retry-After": str(max(1, int(state.retry_after)))},
             )
 
         user = await session.scalar(
-            select(User).where(User.email == str(payload.email))
+            select(User)
+            .options(selectinload(User.join_requests))
+            .where(User.email == str(payload.email))
         )
 
-        if not user or not AuthProvider.check_password(
+        if user is None or AuthProvider.check_password(
             payload.password, user.hashed_password
         ):
-            result = await limiter.hit(key, limit=5, window=WINDOW)
+            # Count only failed authentication attempts
+            result = await limiter.hit(key, limit=MAX_ATTEMPTS, window=WINDOW)
+
+            if not result.allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed login attempts. Try again later.",
+                    headers={"Retry-After": str(max(1, int(result.retry_after)))},
+                )
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"invalid credentials ({result.remaining} left)",
+                detail="Invalid email or password.",
+            )
+
+        await limiter.reset(key)
+        if user.role == None:
+            join_req = user.join_requests
+            if join_req.status == JoinRequestStatus.REJECTED:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your access request was rejected.",
+                )
+
+            if join_req.status == JoinRequestStatus.PENDING:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your access request is still pending.",
+                )
+
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your account has no assigned role.",
             )
 
         max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
         access_token = JWTProvider.create_access_token(user.id)
+
         response.set_cookie(
             key="access_token", value=access_token, max_age=max_age, expires=max_age
         )

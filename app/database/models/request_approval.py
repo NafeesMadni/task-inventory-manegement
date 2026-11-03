@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import ApprovalDecision
 
 if TYPE_CHECKING:
@@ -27,6 +27,11 @@ class RequestApproval(Base):
     __table_args__ = (
         UniqueConstraint("request_id", "level", name="uq_request_approval_level"),
         CheckConstraint("level IN (1, 2)", name="ck_request_approval_level"),
+        enum_check_constraint(
+            ApprovalDecision,
+            "decision",
+            "ck_request_approvals_decision",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -42,8 +47,7 @@ class RequestApproval(Base):
     level: Mapped[int] = mapped_column(Integer, nullable=False)
 
     decision: Mapped[ApprovalDecision] = mapped_column(
-        enum_column(ApprovalDecision, "approval_decision"),
-        nullable=False,
+        enum_column(ApprovalDecision, "approval_decision"), nullable=False
     )
 
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)

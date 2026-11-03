@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import RepairStatus
 
 if TYPE_CHECKING:
@@ -22,6 +22,11 @@ class DeviceRepair(Base):
             "device_id",
             unique=True,
             postgresql_where=text("status IN ('scheduled', 'in_progress')"),
+        ),
+        enum_check_constraint(
+            RepairStatus,
+            "status",
+            "ck_device_repairs_status",
         ),
     )
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.models.base import Base, enum_column
+from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import DeviceCondition
 
 if TYPE_CHECKING:
@@ -26,6 +26,16 @@ class DeviceAssignment(Base):
         ),
         # A request can generate only one assignment
         UniqueConstraint("request_id", name="uq_device_assignment_request"),
+        enum_check_constraint(
+            DeviceCondition,
+            "condition_on_issue",
+            "ck_device_assignments_condition_on_issue",
+        ),
+        enum_check_constraint(
+            DeviceCondition,
+            "condition_on_return",
+            "ck_device_assignments_condition_on_return",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
