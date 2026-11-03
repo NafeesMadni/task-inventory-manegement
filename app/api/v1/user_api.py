@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from redis_fastapi import RateLimitBackendDep
 from sqlalchemy import or_, select
@@ -70,47 +72,44 @@ class UserAPI:
             hashed_password=AuthProvider.get_hashed_password(payload.password),
         )
 
+        session.add(user)
+        await session.flush()
+
         if payload.requested_from:
-            request_from_record = await session.scalar(
+            request_from_user = await session.scalar(
                 select(User).where(User.id == payload.requested_from)
             )
-            if not request_from_record:
+            if not request_from_user:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Requested from user not found",
+                    detail="The user you're requesting from not found.",
                 )
-            join_request = JoinRequest(
-                user=user,
-                requested_role=payload.requested_role,
-                requested_from=request_from_record.id,
-                request_note=payload.request_note,
-            )
+
         else:
             # first fetch Admin user from the database
-            request_from_record = await session.scalar(
+            request_from_user = await session.scalar(
                 select(User).where(User.role == "admin")
             )
-            if not request_from_record:
+            if not request_from_user:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Admin user not found",
+                    detail="Admin not found.",
                 )
 
-            join_request = JoinRequest(
-                user=user,
-                requested_role=payload.requested_role,
-                requested_from=request_from_record.id,
-                request_note=payload.request_note,
-            )
+        join_request = JoinRequest(
+            requested_role=payload.requested_role,
+            requested_by=user.id,
+            requested_from=request_from_user.id,
+            request_note=payload.request_note,
+        )
 
-        # Sent email notification to the requested_from user if the role is developer
-        email = request_from_record.email
-
-        session.add(user)
         session.add(join_request)
 
         await session.commit()
         await session.refresh(user)
+
+        # Sent email notification to the requested_from user if the role is developer
+        email = request_from_user.email  # noqa: F841
 
         access_token = JWTProvider.create_access_token(user.id)
         max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
