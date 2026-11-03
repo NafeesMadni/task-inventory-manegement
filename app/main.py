@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from redis_fastapi import FastAPIRedis
 
-from app.api.v1.auth import Auth
+from app.api.v1.user_api import UserAPI
 
 app = FastAPI(title="Async Inventory Management System!")
 
@@ -22,7 +22,7 @@ app.mount(
 )
 
 
-app.include_router(Auth().router, prefix="/api/v1")
+app.include_router(UserAPI().router, prefix="/api/v1")
 
 
 @app.get("/health")

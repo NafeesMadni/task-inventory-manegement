@@ -4,15 +4,11 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base
 
 from app.core.config import get_settings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-Base = declarative_base()
 
 
 _session = None

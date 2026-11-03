@@ -1,17 +1,22 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from redis_fastapi import RateLimitBackendDep
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
-from app.api.v1.types import LoginRequest, SignupRequest, UserResponse
+from app.api.v1.types import (
+    LoginRequest,
+    SignupRequest,
+    SupervisorResponse,
+    UserResponse,
+)
 from app.core.config import get_settings
-from app.database.models import User
+from app.database.models import JoinRequest, User
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
 
 
-class Auth:
+class UserAPI:
     def __init__(self) -> None:
-        self.router = APIRouter(prefix="/auth", tags=["Authentication Endpoint"])
+        self.router = APIRouter(prefix="/user", tags=["User Endpoint"])
         self._register_routes()
 
     def _register_routes(self) -> None:
@@ -21,6 +26,13 @@ class Auth:
             methods=["POST"],
             response_model=UserResponse,
             status_code=status.HTTP_201_CREATED,
+        )
+        self.router.add_api_route(
+            "/supervisors",
+            endpoint=self.fetch_supervisors,
+            methods=["GET"],
+            response_model=list[SupervisorResponse],
+            status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
             "/login",
@@ -41,7 +53,7 @@ class Auth:
     ) -> UserResponse:
         existing_user = await session.scalar(
             select(User).where(
-                (User.email == payload.email) | (User.username == payload.username)
+                or_(User.email == payload.email, User.username == payload.username)
             )
         )
         if existing_user:
@@ -51,12 +63,52 @@ class Auth:
             )
 
         user = User(
+            first_name=payload.first_name,
+            last_name=payload.last_name,
             username=payload.username,
             email=str(payload.email),
             hashed_password=AuthProvider.get_hashed_password(payload.password),
         )
 
+        if payload.requested_from:
+            request_from_record = await session.scalar(
+                select(User).where(User.id == payload.requested_from)
+            )
+            if not request_from_record:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Requested from user not found",
+                )
+            join_request = JoinRequest(
+                user=user,
+                requested_role=payload.requested_role,
+                requested_from=request_from_record.id,
+                request_note=payload.request_note,
+            )
+        else:
+            # first fetch Admin user from the database
+            request_from_record = await session.scalar(
+                select(User).where(User.role == "admin")
+            )
+            if not request_from_record:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Admin user not found",
+                )
+
+            join_request = JoinRequest(
+                user=user,
+                requested_role=payload.requested_role,
+                requested_from=request_from_record.id,
+                request_note=payload.request_note,
+            )
+
+        # Sent email notification to the requested_from user if the role is developer
+        email = request_from_record.email
+
         session.add(user)
+        session.add(join_request)
+
         await session.commit()
         await session.refresh(user)
 
@@ -70,6 +122,18 @@ class Auth:
         )
 
         return UserResponse(id=user.id, username=user.username, email=user.email)
+
+    async def fetch_supervisors(
+        self, session: DBSession, response: Response
+    ) -> list[SupervisorResponse]:
+        supervisors = await session.scalars(
+            select(User).where(User.role == "supervisor")
+        )
+        response.status_code = status.HTTP_200_OK
+        return [
+            SupervisorResponse(id=supervisor.id, username=supervisor.username)
+            for supervisor in supervisors
+        ]
 
     async def login(
         self,
