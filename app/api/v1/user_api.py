@@ -15,6 +15,7 @@ from app.api.v1.types import (
 )
 from app.core.config import get_settings
 from app.database.models import JoinRequest, JoinRequestStatus, User
+from app.database.models.enums import UserRole
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
 
@@ -71,6 +72,12 @@ class UserAPI:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email or username already registered",
+            )
+
+        if payload.requested_role == UserRole.DEVELOPER and not payload.requested_from:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The 'requested_from' field is required when requesting the DEVELOPER role.",
             )
 
         user = User(
@@ -231,6 +238,7 @@ class UserAPI:
             )
 
         await limiter.reset(key)
+
         if user.role == None:
             join_req = user.join_requests
             if join_req.status == JoinRequestStatus.REJECTED:
