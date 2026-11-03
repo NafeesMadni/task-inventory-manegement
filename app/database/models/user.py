@@ -114,11 +114,16 @@ class User(Base):
         back_populates="requested_from_user", foreign_keys=[JoinRequest.requested_from]
     )
 
+    # All join requests processed (approved/rejected) by this user
+    processed_join_requests: Mapped[list[JoinRequest]] = relationship(
+        back_populates="processor",
+        foreign_keys=[JoinRequest.processed_by],
+    )
+
 
 def get_user_loading_options(role: UserRole):
     options = []
-
-    if role == UserRole.ADMIN and role == UserRole.SUPERVISOR:
+    if role in (UserRole.ADMIN, UserRole.SUPERVISOR):
         options.extend([
             selectinload(User.supervised_developers),
             selectinload(User.supervisor_assignment),
@@ -130,6 +135,7 @@ def get_user_loading_options(role: UserRole):
             selectinload(User.approvals),
             selectinload(User.join_requests),
             selectinload(User.received_join_requests),
+            selectinload(User.processed_join_requests),
         ])
 
     elif role == UserRole.DEVELOPER:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
@@ -8,13 +9,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
+    JoinRequestsResponse,
     LoginRequest,
     SignupRequest,
     SupervisorResponse,
     UserResponse,
 )
 from app.core.config import get_settings
-from app.database.models import JoinRequest, JoinRequestStatus, User
+from app.database.models import JoinRequest, JoinRequestStatus, LoginHistory, User
 from app.database.models.enums import UserRole
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
@@ -34,14 +36,20 @@ class UserAPI:
             status_code=status.HTTP_201_CREATED,
         )
         self.router.add_api_route(
-            "/grant-access",
-            endpoint=self.grant_access,
+            "/join-requests",
+            endpoint=self.join_requests,
+            methods=["GET"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/process-join-request",
+            endpoint=self.process_join_request,
             methods=["GET"],
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
             "/supervisors",
-            endpoint=self.fetch_supervisors,
+            endpoint=self.active_supervisors,
             methods=["GET"],
             response_model=list[SupervisorResponse],
             status_code=status.HTTP_200_OK,
@@ -50,13 +58,6 @@ class UserAPI:
             "/login",
             endpoint=self.login,
             methods=["POST"],
-            status_code=status.HTTP_200_OK,
-        )
-        self.router.add_api_route(
-            "/me",
-            endpoint=self.get_me,
-            methods=["GET"],
-            response_model=UserResponse,
             status_code=status.HTTP_200_OK,
         )
 
@@ -138,56 +139,95 @@ class UserAPI:
 
         return UserResponse(id=user.id, username=user.username, email=user.email)
 
-    async def grant_access(
+    async def active_supervisors(self, session: DBSession) -> list[SupervisorResponse]:
+        result = await session.execute(
+            select(User.id, User.username).where(User.role == UserRole.SUPERVISOR)
+        )
+        supervisors = result.all()
+        return [
+            SupervisorResponse(id=supervisor.id, username=supervisor.username)
+            for supervisor in supervisors
+        ]
+
+    async def join_requests(
+        self, user: GetCurrentUser, session: DBSession
+    ) -> list[JoinRequestsResponse]:
+
+        if user.role == UserRole.ADMIN:
+            # Admin can see all join requests
+            result = await session.scalars(select(JoinRequest))
+            join_requests = result.all()
+
+        elif user.role == UserRole.SUPERVISOR:
+            # Supervisor can see requests addressed to them
+            join_requests = user.received_join_requests
+
+        else:
+            return []
+
+        return [
+            JoinRequestsResponse(
+                id=jr.id,
+                requested_role=jr.requested_role,
+                requested_by=jr.requested_by,
+                requested_from=jr.requested_from,
+                request_note=jr.request_note or "",
+                status=jr.status,
+                requested_at=jr.created_at,
+                processed_by=jr.processed_by,
+                processed_at=jr.processed_at,
+                processed_reason=jr.processed_reason,
+            )
+            for jr in join_requests
+        ]
+
+    async def process_join_request(
         self,
         join_request_id: Annotated[int, Query(...)],
         grant: Annotated[bool, Query(...)],
         user: GetCurrentUser,
         session: DBSession,
+        reason: Annotated[str | None, Query()] = None,
     ) -> None:
         join_request = await session.scalar(
             select(JoinRequest)
             .options(selectinload(JoinRequest.requester))
             .where(JoinRequest.id == join_request_id)
         )
+
         if not join_request:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Request not found, please try again.",
             )
-
-        if join_request.requested_from != user.id:
+        if join_request.requested_from != user.id and user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not authorized to manage this request.",
             )
+
         if join_request.status != JoinRequestStatus.PENDING:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This request has already been processed.",
             )
 
+        join_request.status = (
+            JoinRequestStatus.APPROVED if grant else JoinRequestStatus.REJECTED
+        )
+
+        join_request.processed_by = user.id
+        join_request.processed_at = datetime.now(UTC)
+        join_request.processed_reason = (
+            reason.strip() if reason and reason.strip() else None
+        )
+
         if grant:
-            join_request.status = JoinRequestStatus.APPROVED
             join_request.requester.role = join_request.requested_role
-        else:
-            join_request.status = JoinRequestStatus.REJECTED
 
         await session.commit()
 
         # Notify the requester about the rejection/approval
-
-    async def fetch_supervisors(
-        self, session: DBSession, response: Response
-    ) -> list[SupervisorResponse]:
-        supervisors = await session.scalars(
-            select(User).where(User.role == "supervisor")
-        )
-        response.status_code = status.HTTP_200_OK
-        return [
-            SupervisorResponse(id=supervisor.id, username=supervisor.username)
-            for supervisor in supervisors
-        ]
 
     async def login(
         self,
@@ -258,6 +298,14 @@ class UserAPI:
                 detail="Your account has no assigned role.",
             )
 
+        login_history_record = LoginHistory(
+            user_id=user.id,
+            ip=address,
+        )
+
+        session.add(login_history_record)
+        await session.commit()
+
         max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
         access_token = JWTProvider.create_access_token(user.id)
 
@@ -266,7 +314,3 @@ class UserAPI:
         )
 
         return {"message": "Login successful"}
-
-    async def get_me(self, user: GetCurrentUser) -> UserResponse:
-
-        return UserResponse(id=user.id, username=user.username, email=user.email)

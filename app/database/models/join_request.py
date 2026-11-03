@@ -45,6 +45,16 @@ class JoinRequest(Base):
 
     request_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    processed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+
+    processed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     status: Mapped[JoinRequestStatus] = mapped_column(
         enum_column(JoinRequestStatus, "join_request_status"),
         default=JoinRequestStatus.PENDING,
@@ -65,4 +75,9 @@ class JoinRequest(Base):
     # The user who received the join request (supervisor/admin)
     requested_from_user: Mapped[User] = relationship(
         back_populates="received_join_requests", foreign_keys=[requested_from]
+    )
+
+    processor: Mapped[User | None] = relationship(
+        back_populates="processed_join_requests",
+        foreign_keys=[processed_by],
     )

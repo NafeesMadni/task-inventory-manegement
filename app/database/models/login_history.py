@@ -29,11 +29,6 @@ class LoginHistory(Base):
         nullable=False,
     )
 
-    signed_out_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
     ip: Mapped[str | None] = mapped_column(
         String(45),
         nullable=True,
