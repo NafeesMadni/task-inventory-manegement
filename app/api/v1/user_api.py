@@ -219,7 +219,7 @@ class UserAPI:
             .where(User.email == str(payload.email))
         )
 
-        if user is None or AuthProvider.check_password(
+        if user is None or not AuthProvider.check_password(
             payload.password, user.hashed_password
         ):
             # Count only failed authentication attempts

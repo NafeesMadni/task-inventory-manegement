@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     GMAIL_HOST: str = Field(alias="GMAIL_HOST", default="smtp.gmail.com")
     GMAIL_PORT: int = Field(alias="GMAIL_PORT", default=587)
 
+    INITIAL_ADMIN_EMAIL: str = Field(alias="INITIAL_ADMIN_EMAIL")
+    INITIAL_ADMIN_PASSWORD: str = Field(alias="INITIAL_ADMIN_PASSWORD")
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _use_psycopg_driver(cls, value: str) -> str:
