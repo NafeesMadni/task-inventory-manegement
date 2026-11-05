@@ -29,11 +29,7 @@ FastAPIRedis(app).lifespan().caching().rate_limiting()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app.mount(
-    "/static",
-    StaticFiles(directory=BASE_DIR / "static"),
-    name="static",
-)
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 app.include_router(UserAPI().router, prefix="/api/v1")
