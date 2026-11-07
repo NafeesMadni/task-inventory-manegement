@@ -8,8 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
 from app.database.models import (
     DeviceAssignment,
+    DevicesRequest,
     JoinRequest,
-    NewRepairDevicesRequest,
     SupervisorDeveloper,
 )
 from app.database.models.base import Base, enum_check_constraint, enum_column
@@ -80,14 +80,14 @@ class User(Base):
     )
 
     # New/Repair/Available Devices requests made by this user
-    device_requests: Mapped[list[NewRepairDevicesRequest]] = relationship(
-        back_populates="requester", foreign_keys=[NewRepairDevicesRequest.requested_by]
+    device_requests: Mapped[list[DevicesRequest]] = relationship(
+        back_populates="requester", foreign_keys=[DevicesRequest.requested_by]
     )
 
     # Currently pending New/Repair/Available Devices requests that this user is responsible for approving (Only Admin/Supervisor)
-    pending_device_requests: Mapped[list[NewRepairDevicesRequest]] = relationship(
+    pending_device_requests: Mapped[list[DevicesRequest]] = relationship(
         back_populates="pending_approver",
-        foreign_keys=[NewRepairDevicesRequest.pending_by],
+        foreign_keys=[DevicesRequest.pending_by],
     )
 
     # All device assignments assigned to this user

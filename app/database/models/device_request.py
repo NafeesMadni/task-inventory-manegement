@@ -19,8 +19,8 @@ if TYPE_CHECKING:
     )
 
 
-class NewRepairDevicesRequest(Base):
-    __tablename__ = "new_repair_devices_requests"
+class DevicesRequest(Base):
+    __tablename__ = "devices_requests"
 
     __table_args__ = (
         CheckConstraint(
@@ -30,15 +30,9 @@ class NewRepairDevicesRequest(Base):
             ),
             name="ck_device_request_type_device",
         ),
+        enum_check_constraint(DeviceRequestType, "type", "ck_devices_requests_type"),
         enum_check_constraint(
-            DeviceRequestType,
-            "type",
-            "ck_new_repair_devices_requests_type",
-        ),
-        enum_check_constraint(
-            DeviceRequestStatus,
-            "status",
-            "ck_new_repair_devices_requests_status",
+            DeviceRequestStatus, "status", "ck_devices_requests_status"
         ),
     )
 

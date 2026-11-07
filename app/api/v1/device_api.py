@@ -22,8 +22,8 @@ from app.database.models import (
     DeviceRepair,
     DeviceRequestStatus,
     DeviceRequestType,
+    DevicesRequest,
     DeviceStatus,
-    NewRepairDevicesRequest,
     RequestApproval,
     User,
     UserRole,
@@ -77,14 +77,14 @@ class DeviceAPI:
     async def get_all_devices_requests(
         self, user: GetCurrentUser, session: DBSession, response: Response
     ) -> list[AllDevicesRequestsResponse]:
-        devices_requests: Sequence[NewRepairDevicesRequest] = []
+        devices_requests: Sequence[DevicesRequest] = []
         resp_data: list[AllDevicesRequestsResponse] = []
 
         # ADMIN: can see all requests and their approvals
         if user.role == UserRole.ADMIN:
             result = await session.scalars(
-                select(NewRepairDevicesRequest).options(
-                    selectinload(NewRepairDevicesRequest.approvals).selectinload(
+                select(DevicesRequest).options(
+                    selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
                 )
@@ -94,13 +94,13 @@ class DeviceAPI:
         # SUPERVISOR/Developer: can see only their own requests and approvals
         elif user.role == UserRole.SUPERVISOR or user.role == UserRole.DEVELOPER:
             result = await session.scalars(
-                select(NewRepairDevicesRequest)
+                select(DevicesRequest)
                 .options(
-                    selectinload(NewRepairDevicesRequest.approvals).selectinload(
+                    selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
                 )
-                .where(NewRepairDevicesRequest.requested_by == user.id)
+                .where(DevicesRequest.requested_by == user.id)
             )
             devices_requests = result.all()
         else:
@@ -208,7 +208,7 @@ class DeviceAPI:
         session: DBSession,
         response: Response,
     ):
-        # Developer can't approve anyone else device request
+        # Developers are the lowest in rank and not allowed to process any kind of device requests
         if user.role == UserRole.DEVELOPER:
             response.status_code = status.HTTP_403_FORBIDDEN
             return StatusResponse(
@@ -224,9 +224,7 @@ class DeviceAPI:
 
         if not request_approval_record:
             response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(
-                message="You're not authorized to approve this request."
-            )
+            return StatusResponse(message="Request not found.")
 
         if request_approval_record.decision != ApprovalDecision.PENDING:
             return StatusResponse(
@@ -237,20 +235,20 @@ class DeviceAPI:
             ApprovalDecision.APPROVED if payload.grant else ApprovalDecision.REJECTED
         )
 
+        request_approval_record.decision = decision
         request_approval_record.remarks = payload.remarks
         request_approval_record.acted_at = datetime.now(UTC)
-        request_approval_record.decision = decision
 
         # Fetch main request record by request id and current user id
         new_repair_devices_request_record = await session.scalar(
-            select(NewRepairDevicesRequest)
+            select(DevicesRequest)
             .options(
-                selectinload(NewRepairDevicesRequest.requester),
-                selectinload(NewRepairDevicesRequest.device),
+                selectinload(DevicesRequest.requester),
+                selectinload(DevicesRequest.device),
             )
             .where(
-                NewRepairDevicesRequest.id == payload.request_id,
-                NewRepairDevicesRequest.pending_by == user.id,
+                DevicesRequest.id == payload.request_id,
+                DevicesRequest.pending_by == user.id,
             )
         )
 
@@ -405,7 +403,7 @@ class DeviceAPI:
             response.status_code = status.HTTP_404_NOT_FOUND
             return StatusResponse(message="Admin not found.")
 
-        device_request = NewRepairDevicesRequest(
+        device_request = DevicesRequest(
             requested_by=user.id,
             type=payload.type,
         )

@@ -10,7 +10,7 @@ from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import RepairStatus
 
 if TYPE_CHECKING:
-    from app.database.models import Device, NewRepairDevicesRequest
+    from app.database.models import Device, DevicesRequest
 
 
 class DeviceRepair(Base):
@@ -41,7 +41,7 @@ class DeviceRepair(Base):
     )
 
     request_id: Mapped[int] = mapped_column(
-        ForeignKey("new_repair_devices_requests.id", ondelete="RESTRICT"),
+        ForeignKey("devices_requests.id", ondelete="RESTRICT"),
         unique=True,
         nullable=False,
     )
@@ -81,6 +81,6 @@ class DeviceRepair(Base):
     )  # Many-to-one
 
     # A device repair is associated with a specific repair request, and a repair request can have only one repair.
-    request: Mapped[NewRepairDevicesRequest] = relationship(
+    request: Mapped[DevicesRequest] = relationship(
         back_populates="repair", foreign_keys=[request_id]
     )  # One-to-one

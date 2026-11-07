@@ -17,7 +17,7 @@ from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import ApprovalDecision
 
 if TYPE_CHECKING:
-    from app.database.models import NewRepairDevicesRequest, User
+    from app.database.models import DevicesRequest, User
 
 
 class RequestApproval(Base):
@@ -37,7 +37,7 @@ class RequestApproval(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     request_id: Mapped[int] = mapped_column(
-        ForeignKey("new_repair_devices_requests.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("devices_requests.id", ondelete="CASCADE"), nullable=False
     )
 
     approver_id: Mapped[int] = mapped_column(
@@ -67,6 +67,6 @@ class RequestApproval(Base):
     )
 
     # The request is the device request that is being approved or rejected.
-    request: Mapped[NewRepairDevicesRequest] = relationship(
+    request: Mapped[DevicesRequest] = relationship(
         back_populates="approvals", foreign_keys=[request_id]
     )

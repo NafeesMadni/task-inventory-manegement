@@ -10,7 +10,7 @@ from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.enums import DeviceCondition
 
 if TYPE_CHECKING:
-    from app.database.models import Device, NewRepairDevicesRequest, User
+    from app.database.models import Device, DevicesRequest, User
 
 
 class DeviceAssignment(Base):
@@ -51,7 +51,7 @@ class DeviceAssignment(Base):
 
     # Might be directly assigned by Admin or other higher authority, so for that reason, no request might be made for a device
     request_id: Mapped[int | None] = mapped_column(
-        ForeignKey("new_repair_devices_requests.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("devices_requests.id", ondelete="SET NULL"), nullable=True
     )
 
     assigned_to: Mapped[int] = mapped_column(
@@ -94,6 +94,6 @@ class DeviceAssignment(Base):
         back_populates="device_assignments_assigned_by", foreign_keys=[assigned_by]
     )
 
-    request: Mapped[NewRepairDevicesRequest | None] = relationship(
+    request: Mapped[DevicesRequest | None] = relationship(
         back_populates="assignment", foreign_keys=[request_id]
     )

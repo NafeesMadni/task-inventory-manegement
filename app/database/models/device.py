@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from app.database.models import (
         DeviceAssignment,
         DeviceRepair,
-        NewRepairDevicesRequest,
+        DevicesRequest,
     )
 
 
@@ -93,6 +93,4 @@ class Device(Base):
     assignments: Mapped[list[DeviceAssignment]] = relationship(back_populates="device")
 
     # A device can have multiple repair/available device requests, but only one active request at a time.
-    requests: Mapped[list[NewRepairDevicesRequest]] = relationship(
-        back_populates="device"
-    )
+    requests: Mapped[list[DevicesRequest]] = relationship(back_populates="device")

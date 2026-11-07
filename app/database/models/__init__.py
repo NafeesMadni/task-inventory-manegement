@@ -4,7 +4,7 @@ from app.database.models.base import Base, enum_check_constraint, enum_column
 from app.database.models.device import Device
 from app.database.models.device_assignment import DeviceAssignment
 from app.database.models.device_repair import DeviceRepair
-from app.database.models.device_request import NewRepairDevicesRequest
+from app.database.models.device_request import DevicesRequest
 from app.database.models.enums import (
     ApprovalDecision,
     DeviceCondition,
@@ -31,10 +31,10 @@ __all__ = [
     "DeviceRequestStatus",
     "DeviceRequestType",
     "DeviceStatus",
+    "DevicesRequest",
     "JoinRequest",
     "JoinRequestStatus",
     "LoginHistory",
-    "NewRepairDevicesRequest",
     "RepairStatus",
     "RequestApproval",
     "SupervisorDeveloper",
