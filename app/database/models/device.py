@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.models.base import Base, enum_check_constraint, enum_column
-from app.database.models.enums import DeviceStatus
+from app.database.models.enums import DeviceCondition, DeviceStatus
 
 if TYPE_CHECKING:
     from app.database.models import (
@@ -25,6 +25,11 @@ class Device(Base):
             DeviceStatus,
             "status",
             "ck_devices_status",
+        ),
+        enum_check_constraint(
+            DeviceCondition,
+            "condition",
+            "ck_devices_condition",
         ),
     )
 
@@ -57,6 +62,13 @@ class Device(Base):
         index=True,
     )
 
+    condition: Mapped[DeviceCondition] = mapped_column(
+        enum_column(DeviceCondition, "device_condition"),
+        default=DeviceCondition.NEW,
+        nullable=False,
+    )
+
+    # None?
     issued_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

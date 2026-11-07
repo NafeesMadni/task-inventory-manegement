@@ -1,8 +1,8 @@
-"""add complete database structure.
+"""init database table
 
-Revision ID: 2827a5b53532
+Revision ID: 5b18987d3f2b
 Revises: 
-Create Date: 2026-11-03 03:46:07.005468
+Create Date: 2026-11-06 23:24:59.834788
 
 """
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '2827a5b53532'
+revision: str = '5b18987d3f2b'
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -32,9 +32,12 @@ def upgrade() -> None:
     sa.Column('purchase_date', sa.DateTime(timezone=True), nullable=True),
     sa.Column('purchase_price', sa.Numeric(precision=12, scale=2), nullable=True),
     sa.Column('status', sa.Enum('available', 'reserved', 'assigned', 'repair', 'retired', name='device_status', native_enum=False), nullable=False),
+    sa.Column('condition', sa.Enum('available', 'reserved', 'assigned', 'repair', 'retired', name='device_condition', native_enum=False), nullable=False),
     sa.Column('issued_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("condition IN ('new', 'fair', 'good', 'poor')", name='ck_devices_condition'),
+    sa.CheckConstraint("status IN ('available', 'reserved', 'assigned', 'repair', 'retired')", name='ck_devices_status'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('serial_no')
     )
@@ -48,6 +51,7 @@ def upgrade() -> None:
     sa.Column('email', sa.String(length=255), nullable=False),
     sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("role IN ('admin', 'supervisor', 'developer')", name='ck_users_role'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
@@ -59,8 +63,14 @@ def upgrade() -> None:
     sa.Column('requested_by', sa.Integer(), nullable=False),
     sa.Column('requested_from', sa.Integer(), nullable=False),
     sa.Column('request_note', sa.Text(), nullable=True),
+    sa.Column('processed_by', sa.Integer(), nullable=True),
+    sa.Column('processed_reason', sa.Text(), nullable=True),
+    sa.Column('processed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('status', sa.Enum('pending', 'approved', 'rejected', name='join_request_status', native_enum=False), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("requested_role IN ('admin', 'supervisor', 'developer')", name='ck_join_requests_requested_role'),
+    sa.CheckConstraint("status IN ('pending', 'approved', 'rejected')", name='ck_join_requests_status'),
+    sa.ForeignKeyConstraint(['processed_by'], ['users.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['requested_by'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['requested_from'], ['users.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
@@ -69,7 +79,6 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('signed_in_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('signed_out_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('ip', sa.String(length=45), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
@@ -83,8 +92,10 @@ def upgrade() -> None:
     sa.Column('requested_specs', sa.Text(), nullable=True),
     sa.Column('requested_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('type', sa.Enum('new', 'existing', 'repair', name='device_request_type', native_enum=False), nullable=False),
-    sa.Column('status', sa.Enum('pending', 'approved', 'rejected', name='device_request_status', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'approved', 'fulfilled', 'rejected', name='device_request_status', native_enum=False), nullable=False),
+    sa.CheckConstraint("status IN ('pending', 'approved', 'fulfilled', 'rejected')", name='ck_new_repair_devices_requests_status'),
     sa.CheckConstraint("type = 'new' AND device_id IS NULL OR type IN ('existing', 'repair') AND device_id IS NOT NULL", name='ck_device_request_type_device'),
+    sa.CheckConstraint("type IN ('new', 'existing', 'repair')", name='ck_new_repair_devices_requests_type'),
     sa.ForeignKeyConstraint(['device_id'], ['devices.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['pending_by'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['requested_by'], ['users.id'], ondelete='RESTRICT'),
@@ -113,6 +124,8 @@ def upgrade() -> None:
     sa.Column('returned_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('condition_on_issue', sa.Enum('new', 'fair', 'good', 'poor', name='device_condition_issue', native_enum=False), nullable=True),
     sa.Column('condition_on_return', sa.Enum('new', 'fair', 'good', 'poor', name='device_condition_return', native_enum=False), nullable=True),
+    sa.CheckConstraint("condition_on_issue IN ('new', 'fair', 'good', 'poor')", name='ck_device_assignments_condition_on_issue'),
+    sa.CheckConstraint("condition_on_return IN ('new', 'fair', 'good', 'poor')", name='ck_device_assignments_condition_on_return'),
     sa.ForeignKeyConstraint(['assigned_by'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['assigned_to'], ['users.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['device_id'], ['devices.id'], ondelete='RESTRICT'),
@@ -132,6 +145,7 @@ def upgrade() -> None:
     sa.Column('requested_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('scheduled', 'in_progress', 'completed')", name='ck_device_repairs_status'),
     sa.ForeignKeyConstraint(['device_id'], ['devices.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['request_id'], ['new_repair_devices_requests.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['requested_by'], ['users.id'], ondelete='RESTRICT'),
@@ -144,13 +158,15 @@ def upgrade() -> None:
     sa.Column('request_id', sa.Integer(), nullable=False),
     sa.Column('approver_id', sa.Integer(), nullable=False),
     sa.Column('level', sa.Integer(), nullable=False),
-    sa.Column('decision', sa.Enum('approved', 'rejected', name='approval_decision', native_enum=False), nullable=False),
-    sa.Column('comment', sa.Text(), nullable=True),
-    sa.Column('acted_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('remarks', sa.Text(), nullable=True),
+    sa.Column('decision', sa.Enum('pending', 'approved', 'rejected', name='approval_decision', native_enum=False), nullable=False),
+    sa.Column('acted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.CheckConstraint("decision IN ('pending', 'approved', 'rejected')", name='ck_request_approvals_decision'),
     sa.CheckConstraint('level IN (1, 2)', name='ck_request_approval_level'),
     sa.ForeignKeyConstraint(['approver_id'], ['users.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['request_id'], ['new_repair_devices_requests.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('request_id', 'approver_id', name='uq_request_approval_approver'),
     sa.UniqueConstraint('request_id', 'level', name='uq_request_approval_level')
     )
     # ### end Alembic commands ###

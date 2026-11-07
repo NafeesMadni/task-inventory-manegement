@@ -37,10 +37,12 @@ class DeviceRequestType(str, Enum):
 class DeviceRequestStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
+    FULFILLED = "fulfilled"
     REJECTED = "rejected"
 
 
 class ApprovalDecision(str, Enum):
+    PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
 

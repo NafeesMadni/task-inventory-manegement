@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from redis_fastapi import FastAPIRedis
 
-from app.api.v1.user_api import UserAPI
+from app.api.v1 import DeviceAPI, UserAPI
 from app.database.db import get_sessionmaker
 from app.database.models.seed import create_initial_admin
 
@@ -33,6 +33,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 app.include_router(UserAPI().router, prefix="/api/v1")
+app.include_router(DeviceAPI().router, prefix="/api/v1")
 
 
 @app.get("/health")

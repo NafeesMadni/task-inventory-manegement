@@ -17,7 +17,12 @@ class DeviceAssignment(Base):
     __tablename__ = "device_assignments"
 
     __table_args__ = (
-        # A device can have only one active assignment
+        # Search all assignments by device_id
+        Index(
+            "ix_device_assignments_device_id",
+            "device_id",
+        ),
+        # Partial Unique Index: device can have multiple assignment records, but only one active assignment at a time
         Index(
             "uq_device_active_assignment",
             "device_id",
@@ -78,9 +83,8 @@ class DeviceAssignment(Base):
         enum_column(DeviceCondition, "device_condition_return"), nullable=True
     )
 
-    device: Mapped[Device] = relationship(back_populates="assignments")
-
     # Relationship
+    device: Mapped[Device] = relationship(back_populates="assignments")
 
     assigned_to_user: Mapped[User] = relationship(
         back_populates="device_assignments", foreign_keys=[assigned_to]

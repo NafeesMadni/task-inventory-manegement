@@ -12,12 +12,19 @@ from app.api.v1.types import (
     JoinRequestsResponse,
     LoginRequest,
     SignupRequest,
+    StatusResponse,
     SupervisorResponse,
     UserResponse,
 )
 from app.core.config import get_settings
-from app.database.models import JoinRequest, JoinRequestStatus, LoginHistory, User
-from app.database.models.enums import UserRole
+from app.database.models import (
+    JoinRequest,
+    JoinRequestStatus,
+    LoginHistory,
+    SupervisorDeveloper,
+    User,
+    UserRole,
+)
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
 
@@ -37,7 +44,7 @@ class UserAPI:
         )
         self.router.add_api_route(
             "/join-requests",
-            endpoint=self.join_requests,
+            endpoint=self.get_join_requests,
             methods=["GET"],
             status_code=status.HTTP_200_OK,
         )
@@ -45,6 +52,7 @@ class UserAPI:
             "/process-join-request",
             endpoint=self.process_join_request,
             methods=["GET"],
+            response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
@@ -149,8 +157,8 @@ class UserAPI:
             for supervisor in supervisors
         ]
 
-    async def join_requests(
-        self, user: GetCurrentUser, session: DBSession
+    async def get_join_requests(
+        self, user: GetCurrentUser, session: DBSession, response: Response
     ) -> list[JoinRequestsResponse]:
 
         if user.role == UserRole.ADMIN:
@@ -163,6 +171,7 @@ class UserAPI:
             join_requests = user.received_join_requests
 
         else:
+            response.status_code = status.HTTP_403_FORBIDDEN
             return []
 
         return [
@@ -187,30 +196,55 @@ class UserAPI:
         grant: Annotated[bool, Query(...)],
         user: GetCurrentUser,
         session: DBSession,
+        response: Response,
         reason: Annotated[str | None, Query()] = None,
-    ) -> None:
+    ) -> StatusResponse:
+
         join_request = await session.scalar(
             select(JoinRequest)
-            .options(selectinload(JoinRequest.requester))
+            .options(
+                selectinload(JoinRequest.requester),
+                selectinload(JoinRequest.requested_from_user),
+            )
             .where(JoinRequest.id == join_request_id)
         )
 
         if not join_request:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Request not found, please try again.",
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return StatusResponse(
+                message="Request not found, please try again.",
             )
-        if join_request.requested_from != user.id and user.role != UserRole.ADMIN:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not authorized to manage this request.",
+
+        if join_request.requested_role == UserRole.ADMIN:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(message="Invalid requested role.")
+
+        if join_request.requested_from != user.id:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(
+                message="You are not authorized to manage this request.",
             )
 
         if join_request.status != JoinRequestStatus.PENDING:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This request has already been processed.",
+            return StatusResponse(
+                message=f"This request has already been {join_request.status.value.lower()}."
             )
+
+        requester = join_request.requester
+        approver = join_request.requested_from_user
+
+        if grant:
+            if (
+                approver.role == UserRole.SUPERVISOR
+                and join_request.requested_role == UserRole.DEVELOPER
+            ):
+                supervisor_developer = SupervisorDeveloper(
+                    supervisor_id=approver.id,
+                    developer_id=requester.id,
+                )
+                session.add(supervisor_developer)
+
+            requester.role = join_request.requested_role
 
         join_request.status = (
             JoinRequestStatus.APPROVED if grant else JoinRequestStatus.REJECTED
@@ -222,12 +256,11 @@ class UserAPI:
             reason.strip() if reason and reason.strip() else None
         )
 
-        if grant:
-            join_request.requester.role = join_request.requested_role
-
         await session.commit()
 
         # Notify the requester about the rejection/approval
+
+        return StatusResponse(message="Success!")
 
     async def login(
         self,

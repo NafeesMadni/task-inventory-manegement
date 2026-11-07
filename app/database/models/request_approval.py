@@ -10,7 +10,6 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,11 +25,12 @@ class RequestApproval(Base):
 
     __table_args__ = (
         UniqueConstraint("request_id", "level", name="uq_request_approval_level"),
+        UniqueConstraint(
+            "request_id", "approver_id", name="uq_request_approval_approver"
+        ),
         CheckConstraint("level IN (1, 2)", name="ck_request_approval_level"),
         enum_check_constraint(
-            ApprovalDecision,
-            "decision",
-            "ck_request_approvals_decision",
+            ApprovalDecision, "decision", "ck_request_approvals_decision"
         ),
     )
 
@@ -46,14 +46,17 @@ class RequestApproval(Base):
 
     level: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     decision: Mapped[ApprovalDecision] = mapped_column(
-        enum_column(ApprovalDecision, "approval_decision"), nullable=False
+        enum_column(ApprovalDecision, "approval_decision"),
+        default=ApprovalDecision.PENDING,
+        nullable=False,
     )
 
-    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    acted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    # Update when request decision is made either APPROVED/REJECTED; empty on PENDING
+    acted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
