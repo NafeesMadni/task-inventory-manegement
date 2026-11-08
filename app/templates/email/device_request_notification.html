@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Request</title>
+</head>
+
+<body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; color: #333; background-color: #f5f5f5;">
+
+    <div
+        style="max-width: 550px; margin: 0 auto; padding: 24px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 8px;">
+
+        <h2 style="margin-top: 0; color: #222;">
+            Device Request
+        </h2>
+
+        <p>
+            Hello <strong>{{ approver_username }}</strong>,
+        </p>
+
+        <p>
+            A device request requires your review and approval.
+        </p>
+
+        <p>
+            <strong>Request ID:</strong> #{{ request_id }}<br>
+            <strong>Requester:</strong> {{ requester_username }}<br>
+            <strong>Full Name:</strong> {{ requester_name }}<br>
+            <strong>Request Type:</strong> {{ request_type }}<br>
+            <strong>Submitted At:</strong> {{ requested_at }} UTC
+        </p>
+
+        {% if device_name %}
+        <p>
+            <strong>Device:</strong> {{ device_name }}<br>
+            {% if device_serial %}
+            <strong>Serial Number:</strong> {{ device_serial }}
+            {% endif %}
+        </p>
+        {% endif %}
+
+        {% if requested_specs %}
+        <p><strong>Requested Specifications:</strong></p>
+        <pre
+            style="padding: 12px; background-color: #f5f5f5; border-radius: 5px; white-space: pre-wrap; font-family: monospace;">{{ requested_specs }}</pre>
+        {% endif %}
+
+        <p>
+            Please review this request and take the appropriate action.
+        </p>
+
+        <p style="margin-top: 24px; font-size: 13px; color: #777;">
+            This is an automated notification from {{ app_name }}.
+            Please do not reply to this email.
+        </p>
+
+    </div>
+
+</body>
+
+</html>

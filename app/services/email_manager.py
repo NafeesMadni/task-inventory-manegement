@@ -56,48 +56,6 @@ class EmailManager:
 
         await run_in_threadpool(_sync_send)
 
-    async def send_device_request_decision(
-        self,
-        to_email: str,
-        request_id: int,
-        device_name: str,
-        approved: bool,
-        approver_username: str,
-        approver_role: str,
-        remarks: str | None = None,
-        next_approver_username: str | None = None,
-        next_approver_role: str | None = None,
-        scheduled_at: datetime | None = None,
-    ) -> None:
-        """Send device request approval/rejection notification."""
-
-        template = self.template_env.get_template("device_request_decision.html")
-
-        formatted_scheduled_at = (
-            scheduled_at.strftime("%d %B %Y, %I:%M %p") if scheduled_at else None
-        )
-
-        context = {
-            "app_name": self.config.app_name,
-            "request_id": request_id,
-            "device_name": device_name,
-            "approved": approved,
-            "approver_username": approver_username,
-            "approver_role": approver_role,
-            "remarks": remarks,
-            "next_approver_username": next_approver_username,
-            "next_approver_role": next_approver_role,
-            "scheduled_at": formatted_scheduled_at,
-        }
-
-        body = template.render(**context)
-
-        decision = "Approved" if approved else "Rejected"
-
-        subject = f"{self.config.app_name} - Device Request #{request_id} {decision}"
-
-        await self._send(to_email, subject, body)
-
     async def send_join_request_decision(
         self,
         to_email: str,
@@ -161,5 +119,86 @@ class EmailManager:
         body = template.render(**context)
 
         subject = f"{self.config.app_name} - New Join Request"
+
+        await self._send(to_email, subject, body)
+
+    async def send_device_request_notification(
+        self,
+        to_email: str,
+        approver_username: str,
+        requester_username: str,
+        requester_name: str,
+        request_id: int,
+        request_type: str,
+        requested_at: datetime,
+        device_name: str | None = None,
+        device_serial: str | None = None,
+        requested_specs: str | None = None,
+    ) -> None:
+        """Notify current approver about a new device request."""
+
+        template = self.template_env.get_template("device_request_notification.html")
+
+        context = {
+            "app_name": self.config.app_name,
+            "approver_username": approver_username,
+            "requester_username": requester_username,
+            "requester_name": requester_name,
+            "request_id": request_id,
+            "request_type": request_type.replace("_", " ").title(),
+            "requested_at": requested_at.strftime("%d %B %Y, %I:%M %p"),
+            "device_name": device_name,
+            "device_serial": device_serial,
+            "requested_specs": requested_specs if requested_specs else None,
+        }
+
+        body = template.render(**context)
+
+        subject = (
+            f"{self.config.app_name} - "
+            f"New {request_type.replace('_', ' ').title()} Request #{request_id}"
+        )
+
+        await self._send(to_email, subject, body)
+
+    async def send_device_request_decision(
+        self,
+        to_email: str,
+        request_id: int,
+        device_name: str,
+        approved: bool,
+        approver_username: str,
+        approver_role: str,
+        remarks: str | None = None,
+        next_approver_username: str | None = None,
+        next_approver_role: str | None = None,
+        scheduled_at: datetime | None = None,
+    ) -> None:
+        """Send device request approval/rejection notification."""
+
+        template = self.template_env.get_template("device_request_decision.html")
+
+        formatted_scheduled_at = (
+            scheduled_at.strftime("%d %B %Y, %I:%M %p") if scheduled_at else None
+        )
+
+        context = {
+            "app_name": self.config.app_name,
+            "request_id": request_id,
+            "device_name": device_name,
+            "approved": approved,
+            "approver_username": approver_username,
+            "approver_role": approver_role,
+            "remarks": remarks,
+            "next_approver_username": next_approver_username,
+            "next_approver_role": next_approver_role,
+            "scheduled_at": formatted_scheduled_at,
+        }
+
+        body = template.render(**context)
+
+        decision = "Approved" if approved else "Rejected"
+
+        subject = f"{self.config.app_name} - Device Request #{request_id} {decision}"
 
         await self._send(to_email, subject, body)

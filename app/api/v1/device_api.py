@@ -23,6 +23,7 @@ from app.database.models import (
     ApprovalDecision,
     Device,
     DeviceAssignment,
+    DeviceCondition,
     DeviceRepair,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -32,14 +33,15 @@ from app.database.models import (
     User,
     UserRole,
 )
-from app.database.models.enums import DeviceCondition
 from app.dependencies import DBSession, GetCurrentUser
+from app.services import EmailManager
 
 
 class DeviceAPI:
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/device", tags=["Device Endpoint"])
         self._register_routes()
+        self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
         self.router.add_api_route(
@@ -447,10 +449,22 @@ class DeviceAPI:
                     message="The device you're requesting a repair for, doesn't belongs to you, please contact admin."
                 )
 
+        device: Device | None = None
+
+        if payload.type == DeviceRequestType.EXISTING:
+            device = await session.get(Device, payload.device_id)
+
+            if device and device.status != DeviceStatus.AVAILABLE:
+                response.status_code = status.HTTP_400_BAD_REQUEST
+                return StatusResponse(
+                    message="The device is not available for assignments."
+                )
+
         # Fetch Admin; it's required for approval at any level
         admin_user = await session.scalar(
             select(User).where(User.role == UserRole.ADMIN)
         )
+
         if not admin_user:
             response.status_code = status.HTTP_404_NOT_FOUND
             return StatusResponse(message="Admin not found.")
@@ -465,14 +479,14 @@ class DeviceAPI:
         else:
             device_request.device_id = payload.device_id
 
-        cur_approver_email: str | None = None
+        current_approver: str | None = None
 
         if user.role == UserRole.SUPERVISOR:
             device_request.pending_by = admin_user.id
             device_request.requested_specs = payload.requested_specs
 
             # Inform Admin through Email notification
-            cur_approver_email = admin_user.email
+            current_approver = admin_user
 
             approvals = [RequestApproval(approver_id=admin_user.id, level=2)]
 
@@ -484,12 +498,8 @@ class DeviceAPI:
             device_request.device_id = payload.device_id
 
             # Intentionally, only to complete task quickly
-            supervisor_email = await session.scalar(
-                select(User.email).where(User.id == supervisor_id)
-            )
 
-            # Inform Supervisor through Email notification
-            cur_approver_email = supervisor_email
+            current_approver = await session.get(User, supervisor_id)
 
             approvals = [
                 RequestApproval(approver_id=supervisor_id, level=1),
@@ -512,8 +522,22 @@ class DeviceAPI:
 
         await session.commit()
 
-        # Inform current level approval through Email notification
-        print(f"sending email to {cur_approver_email}...")
+        # Notify current approver
+        if current_approver:
+            print(f"sending email to {current_approver.email}...")
+
+            await self.email_manager.send_device_request_notification(
+                to_email=current_approver.email,
+                approver_username=current_approver.username,
+                requester_username=user.username,
+                requester_name=f"{user.first_name} {user.last_name}",
+                request_id=device_request.id,
+                request_type=device_request.type.value,
+                requested_at=device_request.requested_at,
+                device_name=device.name if device else None,
+                device_serial=device.serial_no if device else None,
+                requested_specs=payload.requested_specs,
+            )
 
         msg = "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
         return StatusResponse(message=f"Request has been sent to {msg} for approval.")

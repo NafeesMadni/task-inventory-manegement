@@ -26,14 +26,14 @@ from app.database.models import (
     UserRole,
 )
 from app.dependencies import DBSession, GetCurrentUser
-from app.services.auth_manager import AuthProvider, JWTProvider
-from app.services.email_manager import EmailManager
+from app.services import AuthProvider, EmailManager, JWTProvider
 
 
 class UserAPI:
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/user", tags=["User Endpoint"])
         self._register_routes()
+        self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
         self.router.add_api_route(
@@ -135,7 +135,7 @@ class UserAPI:
         await session.refresh(user)
 
         # Sent email notification to the requested_from user if the role is developer
-        await EmailManager().send_join_request_notification(
+        await self.email_manager.send_join_request_notification(
             to_email=requested_from_user.email,
             approver_username=requested_from_user.username,
             requester_username=user.username,
@@ -268,7 +268,7 @@ class UserAPI:
         await session.commit()
 
         # Notify the requester about the rejection/approval
-        await EmailManager().send_join_request_decision(
+        await self.email_manager.send_join_request_decision(
             to_email=requester.email,
             requested_role=join_request.requested_role.value,
             approved=grant,
