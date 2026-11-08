@@ -9,10 +9,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    APP_NAME: str = Field(alias="APP_NAME", default="Inventory Manager")
     DATABASE_URL: str = Field(alias="DATABASE_URL")
+
     JWT_SECRET_KEY: str = Field(alias="SECRET_KEY")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     ALGORITHM: str = Field(alias="ALGORITHM")
+
+    GMAIL_USER: str = Field(alias="GMAIL_USER")
+    GMAIL_PASSWORD: str = Field(alias="GMAIL_PASSWORD")
+    GMAIL_HOST: str = Field(alias="GMAIL_HOST", default="smtp.gmail.com")
+    GMAIL_PORT: int = Field(alias="GMAIL_PORT", default=587)
+
+    INITIAL_ADMIN_EMAIL: str = Field(alias="INITIAL_ADMIN_EMAIL")
+    INITIAL_ADMIN_PASSWORD: str = Field(alias="INITIAL_ADMIN_PASSWORD")
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

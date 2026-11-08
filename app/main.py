@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,22 +8,32 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from redis_fastapi import FastAPIRedis
 
-from app.api.v1.auth import Auth
+from app.api.v1 import DeviceAPI, UserAPI
+from app.database.db import get_sessionmaker
+from app.database.models.seed import create_initial_admin
 
-app = FastAPI(title="Async Inventory Management System!")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    LocalSession = await get_sessionmaker()
+
+    async with LocalSession() as _session:
+        await create_initial_admin(_session)
+
+    yield
+
+
+app = FastAPI(title="Async Inventory Management System!", lifespan=lifespan)
 
 FastAPIRedis(app).lifespan().caching().rate_limiting()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-app.mount(
-    "/static",
-    StaticFiles(directory=BASE_DIR / "static"),
-    name="static",
-)
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
-app.include_router(Auth().router, prefix="/api/v1")
+app.include_router(UserAPI().router, prefix="/api/v1")
+app.include_router(DeviceAPI().router, prefix="/api/v1")
 
 
 @app.get("/health")

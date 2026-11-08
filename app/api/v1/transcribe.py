@@ -9,7 +9,7 @@ from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
 
 
-class Auth:
+class TranscribeAI:
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/auth", tags=["Authentication Endpoint"])
         self._register_routes()
