@@ -27,6 +27,7 @@ from app.database.models import (
 )
 from app.dependencies import DBSession, GetCurrentUser
 from app.services.auth_manager import AuthProvider, JWTProvider
+from app.services.email_manager import EmailManager
 
 
 class UserAPI:
@@ -101,10 +102,10 @@ class UserAPI:
         await session.flush()
 
         if payload.requested_from:
-            request_from_user = await session.scalar(
+            requested_from_user = await session.scalar(
                 select(User).where(User.id == payload.requested_from)
             )
-            if not request_from_user:
+            if not requested_from_user:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="The user you're requesting from not found.",
@@ -112,10 +113,10 @@ class UserAPI:
 
         else:
             # first fetch Admin user from the database
-            request_from_user = await session.scalar(
+            requested_from_user = await session.scalar(
                 select(User).where(User.role == "admin")
             )
-            if not request_from_user:
+            if not requested_from_user:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Admin not found.",
@@ -124,7 +125,7 @@ class UserAPI:
         join_request = JoinRequest(
             requested_role=payload.requested_role,
             requested_by=user.id,
-            requested_from=request_from_user.id,
+            requested_from=requested_from_user.id,
             request_note=payload.request_note,
         )
 
@@ -134,7 +135,15 @@ class UserAPI:
         await session.refresh(user)
 
         # Sent email notification to the requested_from user if the role is developer
-        email = request_from_user.email  # noqa: F841
+        await EmailManager().send_join_request_notification(
+            to_email=requested_from_user.email,
+            approver_username=requested_from_user.username,
+            requester_username=user.username,
+            requester_name=f"{user.first_name} {user.last_name}",
+            requester_email=user.email,
+            requested_role=join_request.requested_role.value,
+            requested_at=join_request.created_at,
+        )
 
         access_token = JWTProvider.create_access_token(user.id)
         max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
@@ -259,7 +268,15 @@ class UserAPI:
         await session.commit()
 
         # Notify the requester about the rejection/approval
-
+        await EmailManager().send_join_request_decision(
+            to_email=requester.email,
+            requested_role=join_request.requested_role.value,
+            approved=grant,
+            approver_username=approver.username,
+            approver_role=approver.role.value if approver.role else "",
+            processed_reason=join_request.processed_reason,
+            processed_at=join_request.processed_at,
+        )
         return StatusResponse(message="Success!")
 
     async def login(

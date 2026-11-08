@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Request Update</title>
+</head>
+
+<body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; color: #333; background-color: #f5f5f5;">
+
+    <div
+        style="max-width: 550px; margin: 0 auto; padding: 24px; background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 8px;">
+
+        <h2 style="margin-top: 0; color: #222;">
+            Join Request Update
+        </h2>
+
+        {% if approved %}
+        <p>Your join request has been <strong style="color: #16a34a;">approved</strong>.</p>
+        {% else %}
+        <p>Your join request has been <strong style="color: #dc2626;">rejected</strong>.</p>
+        {% endif %}
+
+        <p>
+            <strong>Requested Role:</strong> {{ requested_role }}<br>
+            <strong>Decision By:</strong> {{ approver_username }} ({{ approver_role }})<br>
+            <strong>Decision Date:</strong> {{ processed_at }} UTC
+        </p>
+
+        {% if approved %}
+        <p>
+            Your account role has been updated to
+            <strong>{{ requested_role }}</strong>.
+            You can now access the system according to your assigned permissions.
+        </p>
+        {% endif %}
+
+        {% if processed_reason %}
+        <p>
+            <strong>Remarks:</strong><br>
+            {{ processed_reason }}
+        </p>
+        {% endif %}
+
+        <p style="margin-top: 24px; font-size: 13px; color: #777;">
+            This is an automated notification from {{ app_name }}. Please do not reply to this email.
+        </p>
+
+    </div>
+
+</body>
+
+</html>
