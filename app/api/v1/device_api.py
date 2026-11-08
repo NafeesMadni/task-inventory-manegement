@@ -13,6 +13,8 @@ from app.api.v1.types import (
     AvailableDevicesResponse,
     MakeDeviceRequest,
     ProcessDeviceRequest,
+    SearchDevicesRequest,
+    SearchOptionsResponse,
     StatusResponse,
     _AddDeviceRequest,
     _RequestApprovals,
@@ -20,6 +22,7 @@ from app.api.v1.types import (
 from app.database.models import (
     ApprovalDecision,
     Device,
+    DeviceAssignment,
     DeviceRepair,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -29,7 +32,7 @@ from app.database.models import (
     User,
     UserRole,
 )
-from app.database.models.device_assignment import DeviceAssignment
+from app.database.models.enums import DeviceCondition
 from app.dependencies import DBSession, GetCurrentUser
 
 
@@ -40,9 +43,16 @@ class DeviceAPI:
 
     def _register_routes(self) -> None:
         self.router.add_api_route(
-            "/available",
-            endpoint=self.get_available_devices,
+            "/options",
+            endpoint=self.get_search_options,
             methods=["GET"],
+            response_model=SearchOptionsResponse,
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/search",
+            endpoint=self.search_devices,
+            methods=["POST"],
             response_model=list[AvailableDevicesResponse],
             status_code=status.HTTP_200_OK,
         )
@@ -73,6 +83,12 @@ class DeviceAPI:
             methods=["POST"],
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
+        )
+
+    async def get_search_options(self) -> SearchOptionsResponse:
+        return SearchOptionsResponse(
+            statuses=list(DeviceStatus),
+            conditions=list(DeviceCondition),
         )
 
     async def get_all_devices_requests(
@@ -186,13 +202,22 @@ class DeviceAPI:
 
         return device
 
-    async def get_available_devices(
-        self, _: GetCurrentUser, session: DBSession
+    async def search_devices(
+        self, payload: SearchDevicesRequest, _: GetCurrentUser, session: DBSession
     ) -> list[AvailableDevicesResponse]:
-        result = await session.scalars(
-            select(Device).where(Device.status == DeviceStatus.AVAILABLE)
-        )
+
+        filters = []
+
+        if payload.status is not None:
+            filters.append(Device.status == payload.status)
+
+        if payload.condition is not None:
+            filters.append(Device.condition == payload.condition)
+
+        result = await session.scalars(select(Device).where(*filters))
+
         available_devices = result.all()
+
         return [
             AvailableDevicesResponse(
                 id=device.id,
@@ -202,6 +227,7 @@ class DeviceAPI:
                 hdd_gb=device.hdd_gb,
                 processor=device.processor,
                 brand=device.brand,
+                status=device.status,
                 condition=device.condition,
                 issued_at=device.issued_at,
             )
@@ -491,21 +517,3 @@ class DeviceAPI:
 
         msg = "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
         return StatusResponse(message=f"Request has been sent to {msg} for approval.")
-
-    # async def get_assigned_by_you_devices(
-    #     self, user: GetCurrentUser, session: DBSession
-    # ) -> list[AssignedByDevicesResponse]:
-    #     result = await session.execute(
-    #         select(DeviceAssignment)
-    #         .options(selectinload(DeviceAssignment.assignments))
-    #         .where(DeviceAssignment.assigned_by == user.id)
-    #     )
-    #     available_devices = result.all()
-    #     return [
-    #         AssignedByDevicesResponse(
-    #             id=device.id,
-    #             device_id=device.id,
-    #             status_fullfilled=
-    #         )
-    #         for device in available_devices
-    #     ]
