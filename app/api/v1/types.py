@@ -3,14 +3,13 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.database.models import (
-    DeviceRequestType,
-    JoinRequestStatus,
-    UserRole,
-)
-from app.database.models.enums import (
     ApprovalDecision,
     DeviceCondition,
     DeviceRequestStatus,
+    DeviceRequestType,
+    DeviceStatus,
+    JoinRequestStatus,
+    UserRole,
 )
 
 
@@ -139,6 +138,8 @@ class AvailableDevicesResponse(BaseModel):
     processor: str
     brand: str
     issued_at: datetime | None = None
+
+    status: DeviceStatus
     condition: DeviceCondition
 
 
@@ -148,3 +149,13 @@ class AssignedByDevicesResponse(BaseModel):
     status_fullfilled: bool
     assigned_to: bool
     assigned_at: datetime | None
+
+
+class SearchOptionsResponse(BaseModel):
+    statuses: list[DeviceStatus]
+    conditions: list[DeviceCondition]
+
+
+class SearchDevicesRequest(BaseModel):
+    status: DeviceStatus | None = None
+    condition: DeviceCondition | None = None
