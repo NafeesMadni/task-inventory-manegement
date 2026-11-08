@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -75,12 +76,23 @@ class DeviceAPI:
         )
 
     async def get_all_devices_requests(
-        self, user: GetCurrentUser, session: DBSession, response: Response
+        self,
+        user: GetCurrentUser,
+        session: DBSession,
+        response: Response,
+        only_my_pending: Annotated[bool, Query()] = False,
     ) -> list[AllDevicesRequestsResponse]:
-        devices_requests: Sequence[DevicesRequest] = []
         resp_data: list[AllDevicesRequestsResponse] = []
 
-        # ADMIN: can see all requests and their approvals
+        if (not only_my_pending and user.role == UserRole.DEVELOPER) or (
+            only_my_pending and user.role == UserRole.ADMIN
+        ):
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return resp_data
+
+        devices_requests: Sequence[DevicesRequest] = []
+
+        # ADMIN: can see everyone requests and their approvals
         if user.role == UserRole.ADMIN:
             result = await session.scalars(
                 select(DevicesRequest).options(
@@ -91,8 +103,23 @@ class DeviceAPI:
             )
             devices_requests = result.all()
 
-        # SUPERVISOR/Developer: can see only their own requests and approvals
-        elif user.role == UserRole.SUPERVISOR or user.role == UserRole.DEVELOPER:
+        # SUPERVISOR with only_my_pending(False): can see only their developers requests and level of approvals
+        elif not only_my_pending and user.role == UserRole.SUPERVISOR:
+            result = await session.scalars(
+                select(DevicesRequest)
+                .options(
+                    selectinload(DevicesRequest.approvals).selectinload(
+                        RequestApproval.approver
+                    ),
+                )
+                .where(RequestApproval.approver_id == user.id)
+            )
+            devices_requests = result.all()
+
+        # SUPERVISOR/DEVELOPER: can see only their own and developers requests and approvals
+        elif (
+            only_my_pending and user.role == UserRole.SUPERVISOR
+        ) or user.role == UserRole.DEVELOPER:
             result = await session.scalars(
                 select(DevicesRequest)
                 .options(
@@ -103,6 +130,7 @@ class DeviceAPI:
                 .where(DevicesRequest.requested_by == user.id)
             )
             devices_requests = result.all()
+
         else:
             response.status_code = status.HTTP_400_BAD_REQUEST
             return resp_data
@@ -240,7 +268,7 @@ class DeviceAPI:
         request_approval_record.acted_at = datetime.now(UTC)
 
         # Fetch main request record by request id and current user id
-        new_repair_devices_request_record = await session.scalar(
+        devices_request_record = await session.scalar(
             select(DevicesRequest)
             .options(
                 selectinload(DevicesRequest.requester),
@@ -252,17 +280,17 @@ class DeviceAPI:
             )
         )
 
-        if not new_repair_devices_request_record:
+        if not devices_request_record:
             response.status_code = status.HTTP_404_NOT_FOUND
             return StatusResponse(message="Request not found.")
 
-        if new_repair_devices_request_record.status == DeviceRequestStatus.REJECTED:
+        if devices_request_record.status == DeviceRequestStatus.REJECTED:
             return StatusResponse(message="Request has already been rejected.")
 
-        elif new_repair_devices_request_record.status == DeviceRequestStatus.APPROVED:
+        elif devices_request_record.status == DeviceRequestStatus.APPROVED:
             return StatusResponse(message="Request has already been approved by amdin.")
 
-        elif new_repair_devices_request_record.status == DeviceRequestStatus.FULFILLED:
+        elif devices_request_record.status == DeviceRequestStatus.FULFILLED:
             return StatusResponse(
                 message="Request has already been approved and fulfilled by amdin."
             )
@@ -270,7 +298,7 @@ class DeviceAPI:
         if (
             payload.grant
             and user.role == UserRole.ADMIN
-            and new_repair_devices_request_record.type == DeviceRequestType.NEW
+            and devices_request_record.type == DeviceRequestType.NEW
             and (not payload.device_specs or not payload.scheduled_at)
         ):
             response.status_code = status.HTTP_400_BAD_REQUEST
@@ -279,10 +307,10 @@ class DeviceAPI:
             )
 
         # For push notification about approve/reject
-        requester_email = new_repair_devices_request_record.requester.email  # noqa: F841
+        requester_email = devices_request_record.requester.email  # noqa: F841
 
         if decision == ApprovalDecision.REJECTED:
-            new_repair_devices_request_record.status = DeviceRequestStatus.REJECTED
+            devices_request_record.status = DeviceRequestStatus.REJECTED
 
             await session.commit()
 
@@ -293,22 +321,21 @@ class DeviceAPI:
         elif payload.grant:
             # It's a last level, approve the NewRepairDevicesRequest.status, update neccessary info and return
             if user.role == UserRole.ADMIN:
-                new_repair_devices_request_record.status = DeviceRequestStatus.APPROVED
+                devices_request_record.status = DeviceRequestStatus.APPROVED
 
                 if (
-                    new_repair_devices_request_record.device
-                    and new_repair_devices_request_record.type
-                    == DeviceRequestType.REPAIR
+                    devices_request_record.device
+                    and devices_request_record.type == DeviceRequestType.REPAIR
                 ):
-                    device = new_repair_devices_request_record.device
+                    device = devices_request_record.device
                     device.status = DeviceStatus.REPAIR
 
                     device_repair = DeviceRepair(
                         device_id=device.id,
                         request_id=payload.request_id,
                         scheduled_at=payload.scheduled_at,
-                        requested_by=new_repair_devices_request_record.requested_by,
-                        requested_at=new_repair_devices_request_record.requested_at,
+                        requested_by=devices_request_record.requested_by,
+                        requested_at=devices_request_record.requested_at,
                     )
 
                     session.add(device_repair)
@@ -316,17 +343,16 @@ class DeviceAPI:
 
                 else:
                     if (
-                        new_repair_devices_request_record.device
-                        and new_repair_devices_request_record.type
-                        == DeviceRequestType.EXISTING
+                        devices_request_record.device
+                        and devices_request_record.type == DeviceRequestType.EXISTING
                     ):
-                        device = new_repair_devices_request_record.device
+                        device = devices_request_record.device
                         device.status = DeviceStatus.RESERVED
 
                         session.add(device)
 
                     elif (
-                        new_repair_devices_request_record.type == DeviceRequestType.NEW
+                        devices_request_record.type == DeviceRequestType.NEW
                         and payload.device_specs
                     ):
                         device = await self._add_device_record(
@@ -348,11 +374,11 @@ class DeviceAPI:
                 )
 
                 if next_request_approval:
-                    new_repair_devices_request_record.pending_by = (
+                    devices_request_record.pending_by = (
                         next_request_approval.approver_id
                     )
 
-                    session.add(new_repair_devices_request_record)
+                    session.add(devices_request_record)
                     await session.commit()
 
                     # Notify the next approval
