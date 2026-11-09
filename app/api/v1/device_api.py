@@ -33,6 +33,7 @@ from app.database.models import (
 )
 from app.dependencies import DBSession, GetCurrentUser
 from app.services import EmailManager
+from app.services.tasks_manager import send_device_scheduled_reminder_alert
 
 
 class DeviceAPI:
@@ -255,6 +256,134 @@ class DeviceAPI:
             message="You don't have autherority to add device to the inventory."
         )
 
+    async def create_device_request(
+        self,
+        payload: MakeDeviceRequest,
+        user: GetCurrentUser,
+        session: DBSession,
+        response: Response,
+    ) -> StatusResponse:
+
+        if user.role == UserRole.ADMIN:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(
+                message="Sorry, you're admin and can't create device request. Please add device directly to inventory"
+            )
+
+        if payload.type == DeviceRequestType.REPAIR:
+            active_assignment = await session.scalar(
+                select(DeviceAssignment).where(
+                    DeviceAssignment.assigned_to == user.id,
+                    DeviceAssignment.device_id == payload.device_id,
+                    DeviceAssignment.returned_at.is_(None),
+                )
+            )
+
+            if not active_assignment:
+                response.status_code = status.HTTP_403_FORBIDDEN
+                return StatusResponse(
+                    message="The device you're requesting a repair for, doesn't belongs to you, please contact admin."
+                )
+
+        device: Device | None = None
+
+        if payload.type == DeviceRequestType.EXISTING:
+            device = await session.get(Device, payload.device_id)
+
+            if device and device.status != DeviceStatus.AVAILABLE:
+                response.status_code = status.HTTP_400_BAD_REQUEST
+                return StatusResponse(
+                    message="The device is not available for assignments."
+                )
+
+        # Fetch Admin; it's required for approval at any level
+        admin_user = await session.scalar(
+            select(User).where(User.role == UserRole.ADMIN)
+        )
+
+        if not admin_user:
+            response.status_code = status.HTTP_404_NOT_FOUND
+            return StatusResponse(message="Admin not found.")
+
+        device_request = DevicesRequest(
+            requested_by=user.id,
+            issue=payload.issue,
+            type=payload.type,
+        )
+
+        if payload.type == DeviceRequestType.NEW:
+            device_request.requested_specs = payload.requested_specs
+        else:
+            device_request.device_id = payload.device_id
+
+        current_approver: str | None = None
+
+        if user.role == UserRole.SUPERVISOR:
+            device_request.pending_by = admin_user.id
+            device_request.requested_specs = payload.requested_specs
+
+            # Inform Admin through Email notification
+            current_approver = admin_user
+
+            approvals = [RequestApproval(approver_id=admin_user.id, level=2)]
+
+        elif user.role == UserRole.DEVELOPER and user.supervisor_assignment:
+            # Fetch Developer's Supervisor id first to whom the request should be sent
+            supervisor_id = user.supervisor_assignment.supervisor_id
+
+            device_request.pending_by = supervisor_id
+            device_request.device_id = payload.device_id
+
+            # Intentionally, only to complete task quickly
+
+            current_approver = await session.get(User, supervisor_id)
+
+            approvals = [
+                RequestApproval(approver_id=supervisor_id, level=1),
+                RequestApproval(approver_id=admin_user.id, level=2),
+            ]
+
+        else:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(
+                message="DEVELOPER: Request can't be created. Please contact admin!"
+            )
+
+        session.add(device_request)
+        await session.flush()
+
+        for approval in approvals:
+            approval.request_id = device_request.id
+
+        session.add_all(approvals)
+
+        await session.commit()
+
+        # Notify current approver
+        if current_approver:
+            print(f"sending email to {current_approver.email}...")
+
+            await self.email_manager.send_device_request_notification(
+                to_email=current_approver.email,
+                approver_username=current_approver.username,
+                requester_username=user.username,
+                requester_name=f"{user.first_name} {user.last_name}",
+                request_id=device_request.id,
+                request_type=device_request.type.value,
+                requested_at=device_request.requested_at,
+                device_name=device.name if device else None,
+                device_serial=device.serial_no if device else None,
+                requested_specs=payload.requested_specs,
+            )
+
+        decision_msg = (
+            "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
+        )
+
+        return StatusResponse(
+            message=f"Request has been sent to {decision_msg} for approval."
+        )
+
     async def process_device_request(
         self,
         payload: ProcessDeviceRequest,
@@ -337,6 +466,7 @@ class DeviceAPI:
             )
 
         next_request_approval: RequestApproval | None = None
+        device: Device | None = None
 
         if decision == ApprovalDecision.REJECTED:
             devices_request_record.status = DeviceRequestStatus.REJECTED
@@ -355,6 +485,7 @@ class DeviceAPI:
 
                     device_repair = DeviceRepair(
                         device_id=device.id,
+                        note=payload.remarks or "",
                         request_id=payload.request_id,
                         scheduled_at=payload.scheduled_at,
                         requested_by=devices_request_record.requested_by,
@@ -372,6 +503,18 @@ class DeviceAPI:
                         device = devices_request_record.device
                         device.status = DeviceStatus.RESERVED
 
+                        device_assignment = DeviceAssignment(
+                            device_id=device.id,
+                            request_id=payload.request_id,
+                            assigned_to=devices_request_record.requested_by,
+                            assigned_by=user.id,
+                            scheduled_at=payload.scheduled_at,
+                            condition_on_issue=device.condition,
+                        )
+
+                        session.add(device_assignment)
+                        await session.flush()
+
                     elif (
                         payload.device_specs
                         and devices_request_record.type == DeviceRequestType.NEW
@@ -383,6 +526,19 @@ class DeviceAPI:
                         )
 
                         session.add(device)
+                        await session.flush()
+
+                        device_assignment = DeviceAssignment(
+                            device_id=device.id,
+                            request_id=payload.request_id,
+                            assigned_to=devices_request_record.requested_by,
+                            assigned_by=user.id,
+                            scheduled_at=payload.scheduled_at,
+                            condition_on_issue=DeviceCondition.NEW,
+                        )
+
+                        session.add(device_assignment)
+                        await session.flush()
 
             else:  # Find next approval, update NewRepairDevicesRequest.pending_by with that approval.id, and send a email notification to both pending approval and requester
                 next_request_approval = await session.scalar(
@@ -441,131 +597,25 @@ class DeviceAPI:
                 requested_specs=devices_request_record.requested_specs,
             )
 
+        if device and payload.scheduled_at:
+            now = datetime.now(UTC)
+
+            time_difference = payload.scheduled_at - now
+            total_seconds = time_difference.total_seconds()
+
+            device_scheduled_alert_task_countdown = max(0, int(total_seconds))
+
+            send_device_scheduled_reminder_alert.apply_async(  # type: ignore
+                kwargs={
+                    "to_email": devices_request_record.requester.email,
+                    "requester_username": devices_request_record.requester.username,
+                    "request_id": payload.request_id,
+                    "request_type": devices_request_record.type,
+                    "device_name": device.name,
+                    "device_serial": device.serial_no,
+                    "scheduled_at": payload.scheduled_at,
+                },
+                countdown=device_scheduled_alert_task_countdown,
+            )
+
         return StatusResponse(message=f"Request {decision.value} successful.")
-
-    async def create_device_request(
-        self,
-        payload: MakeDeviceRequest,
-        user: GetCurrentUser,
-        session: DBSession,
-        response: Response,
-    ) -> StatusResponse:
-
-        if user.role == UserRole.ADMIN:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(
-                message="Sorry, you're admin and can't create device request. Please add device directly to inventory"
-            )
-
-        if payload.type == DeviceRequestType.REPAIR:
-            active_assignment = await session.scalar(
-                select(DeviceAssignment).where(
-                    DeviceAssignment.assigned_to == user.id,
-                    DeviceAssignment.device_id == payload.device_id,
-                    DeviceAssignment.returned_at.is_(None),
-                )
-            )
-
-            if not active_assignment:
-                response.status_code = status.HTTP_403_FORBIDDEN
-                return StatusResponse(
-                    message="The device you're requesting a repair for, doesn't belongs to you, please contact admin."
-                )
-
-        device: Device | None = None
-
-        if payload.type == DeviceRequestType.EXISTING:
-            device = await session.get(Device, payload.device_id)
-
-            if device and device.status != DeviceStatus.AVAILABLE:
-                response.status_code = status.HTTP_400_BAD_REQUEST
-                return StatusResponse(
-                    message="The device is not available for assignments."
-                )
-
-        # Fetch Admin; it's required for approval at any level
-        admin_user = await session.scalar(
-            select(User).where(User.role == UserRole.ADMIN)
-        )
-
-        if not admin_user:
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return StatusResponse(message="Admin not found.")
-
-        device_request = DevicesRequest(
-            requested_by=user.id,
-            type=payload.type,
-        )
-
-        if payload.type == DeviceRequestType.NEW:
-            device_request.requested_specs = payload.requested_specs
-        else:
-            device_request.device_id = payload.device_id
-
-        current_approver: str | None = None
-
-        if user.role == UserRole.SUPERVISOR:
-            device_request.pending_by = admin_user.id
-            device_request.requested_specs = payload.requested_specs
-
-            # Inform Admin through Email notification
-            current_approver = admin_user
-
-            approvals = [RequestApproval(approver_id=admin_user.id, level=2)]
-
-        elif user.role == UserRole.DEVELOPER and user.supervisor_assignment:
-            # Fetch Developer's Supervisor id first to whom the request should be sent
-            supervisor_id = user.supervisor_assignment.supervisor_id
-
-            device_request.pending_by = supervisor_id
-            device_request.device_id = payload.device_id
-
-            # Intentionally, only to complete task quickly
-
-            current_approver = await session.get(User, supervisor_id)
-
-            approvals = [
-                RequestApproval(approver_id=supervisor_id, level=1),
-                RequestApproval(approver_id=admin_user.id, level=2),
-            ]
-
-        else:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(
-                message="DEVELOPER: Request can't be created. Please contact admin!"
-            )
-
-        session.add(device_request)
-        await session.flush()
-
-        for approval in approvals:
-            approval.request_id = device_request.id
-
-        session.add_all(approvals)
-
-        await session.commit()
-
-        # Notify current approver
-        if current_approver:
-            print(f"sending email to {current_approver.email}...")
-
-            await self.email_manager.send_device_request_notification(
-                to_email=current_approver.email,
-                approver_username=current_approver.username,
-                requester_username=user.username,
-                requester_name=f"{user.first_name} {user.last_name}",
-                request_id=device_request.id,
-                request_type=device_request.type.value,
-                requested_at=device_request.requested_at,
-                device_name=device.name if device else None,
-                device_serial=device.serial_no if device else None,
-                requested_specs=payload.requested_specs,
-            )
-
-        decision_msg = (
-            "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
-        )
-
-        return StatusResponse(
-            message=f"Request has been sent to {decision_msg} for approval."
-        )
