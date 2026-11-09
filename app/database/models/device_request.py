@@ -38,7 +38,7 @@ class DevicesRequest(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    issue: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issue: Mapped[str] = mapped_column(Text, nullable=False)
 
     device_id: Mapped[int | None] = mapped_column(
         ForeignKey("devices.id", ondelete="RESTRICT"), nullable=True
