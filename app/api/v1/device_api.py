@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated
@@ -23,6 +21,7 @@ from app.database.models import (
     ApprovalDecision,
     Device,
     DeviceAssignment,
+    DeviceCondition,
     DeviceRepair,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -32,14 +31,15 @@ from app.database.models import (
     User,
     UserRole,
 )
-from app.database.models.enums import DeviceCondition
 from app.dependencies import DBSession, GetCurrentUser
+from app.services import EmailManager
 
 
 class DeviceAPI:
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/device", tags=["Device Endpoint"])
         self._register_routes()
+        self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
         self.router.add_api_route(
@@ -307,8 +307,12 @@ class DeviceAPI:
         )
 
         if not devices_request_record:
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return StatusResponse(message="Request not found.")
+            response.status_code = status.HTTP_409_CONFLICT
+            return StatusResponse(
+                message=(
+                    "This request has either already been processed by you or is awaiting approval from a lower-level authority."
+                )
+            )
 
         if devices_request_record.status == DeviceRequestStatus.REJECTED:
             return StatusResponse(message="Request has already been rejected.")
@@ -332,17 +336,10 @@ class DeviceAPI:
                 message="Please provide all required details (device_specs, scheduled_at) to approve request for a new device."
             )
 
-        # For push notification about approve/reject
-        requester_email = devices_request_record.requester.email  # noqa: F841
+        next_request_approval: RequestApproval | None = None
 
         if decision == ApprovalDecision.REJECTED:
             devices_request_record.status = DeviceRequestStatus.REJECTED
-
-            await session.commit()
-
-            # Notify the requester about rejection
-
-            return StatusResponse(message="Request has been rejected.")
 
         elif payload.grant:
             # It's a last level, approve the NewRepairDevicesRequest.status, update neccessary info and return
@@ -375,11 +372,9 @@ class DeviceAPI:
                         device = devices_request_record.device
                         device.status = DeviceStatus.RESERVED
 
-                        session.add(device)
-
                     elif (
-                        devices_request_record.type == DeviceRequestType.NEW
-                        and payload.device_specs
+                        payload.device_specs
+                        and devices_request_record.type == DeviceRequestType.NEW
                     ):
                         device = await self._add_device_record(
                             payload.device_specs,
@@ -388,9 +383,6 @@ class DeviceAPI:
                         )
 
                         session.add(device)
-
-                    await session.commit()
-                    return StatusResponse(message="Request approved.")
 
             else:  # Find next approval, update NewRepairDevicesRequest.pending_by with that approval.id, and send a email notification to both pending approval and requester
                 next_request_approval = await session.scalar(
@@ -404,19 +396,52 @@ class DeviceAPI:
                         next_request_approval.approver_id
                     )
 
-                    session.add(devices_request_record)
-                    await session.commit()
-
-                    # Notify the next approval
-                    email = next_request_approval.approver.email  # noqa: F841
                 else:
-                    response.status_code = status.HTTP_404_NOT_FOUND
+                    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
                     return StatusResponse(
-                        message="Request can't be processed, please try again or contact admin."
+                        message="Your request was processed successfully, but the next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
                     )
 
-            await session.commit()
-            return StatusResponse(message="Request successful.")
+        await session.commit()
+
+        await self.email_manager.send_device_request_decision(
+            to_email=devices_request_record.requester.email,
+            request_id=devices_request_record.id,
+            device_name=devices_request_record.device.name
+            if devices_request_record.device
+            else "Unknown",
+            approved=payload.grant,
+            approver_username=request_approval_record.approver.username,
+            approver_role=request_approval_record.approver.role.value or "Unknown",  # type: ignore
+            remarks=payload.remarks,
+            next_approver_username=next_request_approval.approver.username
+            if next_request_approval
+            else None,
+            next_approver_role=next_request_approval.approver.role.value  # type: ignore
+            if next_request_approval
+            else None,
+            scheduled_at=payload.scheduled_at if payload.scheduled_at else None,
+        )
+
+        if next_request_approval:
+            await self.email_manager.send_device_request_notification(
+                to_email=next_request_approval.approver.email,
+                approver_username=next_request_approval.approver.username,
+                requester_username=user.username,
+                requester_name=f"{user.first_name} {user.last_name}",
+                request_id=devices_request_record.id,
+                request_type=devices_request_record.type.value,
+                requested_at=devices_request_record.requested_at,
+                device_name=devices_request_record.device.name
+                if devices_request_record.device
+                else None,
+                device_serial=devices_request_record.serial_no
+                if devices_request_record.device
+                else None,
+                requested_specs=devices_request_record.requested_specs,
+            )
+
+        return StatusResponse(message=f"Request {decision.value} successful.")
 
     async def create_device_request(
         self,
@@ -447,10 +472,22 @@ class DeviceAPI:
                     message="The device you're requesting a repair for, doesn't belongs to you, please contact admin."
                 )
 
+        device: Device | None = None
+
+        if payload.type == DeviceRequestType.EXISTING:
+            device = await session.get(Device, payload.device_id)
+
+            if device and device.status != DeviceStatus.AVAILABLE:
+                response.status_code = status.HTTP_400_BAD_REQUEST
+                return StatusResponse(
+                    message="The device is not available for assignments."
+                )
+
         # Fetch Admin; it's required for approval at any level
         admin_user = await session.scalar(
             select(User).where(User.role == UserRole.ADMIN)
         )
+
         if not admin_user:
             response.status_code = status.HTTP_404_NOT_FOUND
             return StatusResponse(message="Admin not found.")
@@ -465,14 +502,14 @@ class DeviceAPI:
         else:
             device_request.device_id = payload.device_id
 
-        cur_approver_email: str | None = None
+        current_approver: str | None = None
 
         if user.role == UserRole.SUPERVISOR:
             device_request.pending_by = admin_user.id
             device_request.requested_specs = payload.requested_specs
 
             # Inform Admin through Email notification
-            cur_approver_email = admin_user.email
+            current_approver = admin_user
 
             approvals = [RequestApproval(approver_id=admin_user.id, level=2)]
 
@@ -484,12 +521,8 @@ class DeviceAPI:
             device_request.device_id = payload.device_id
 
             # Intentionally, only to complete task quickly
-            supervisor_email = await session.scalar(
-                select(User.email).where(User.id == supervisor_id)
-            )
 
-            # Inform Supervisor through Email notification
-            cur_approver_email = supervisor_email
+            current_approver = await session.get(User, supervisor_id)
 
             approvals = [
                 RequestApproval(approver_id=supervisor_id, level=1),
@@ -512,8 +545,27 @@ class DeviceAPI:
 
         await session.commit()
 
-        # Inform current level approval through Email notification
-        print(f"sending email to {cur_approver_email}...")
+        # Notify current approver
+        if current_approver:
+            print(f"sending email to {current_approver.email}...")
 
-        msg = "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
-        return StatusResponse(message=f"Request has been sent to {msg} for approval.")
+            await self.email_manager.send_device_request_notification(
+                to_email=current_approver.email,
+                approver_username=current_approver.username,
+                requester_username=user.username,
+                requester_name=f"{user.first_name} {user.last_name}",
+                request_id=device_request.id,
+                request_type=device_request.type.value,
+                requested_at=device_request.requested_at,
+                device_name=device.name if device else None,
+                device_serial=device.serial_no if device else None,
+                requested_specs=payload.requested_specs,
+            )
+
+        decision_msg = (
+            "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
+        )
+
+        return StatusResponse(
+            message=f"Request has been sent to {decision_msg} for approval."
+        )

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -9,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.db import get_sessionmaker
 from app.database.models import User, get_user_loading_options
-from app.services.auth_manager import JWTProvider
+from app.services import JWTProvider
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
