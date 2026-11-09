@@ -135,7 +135,7 @@ class EmailManager:
         device_serial: str | None = None,
         requested_specs: str | None = None,
     ) -> None:
-        """Notify current approver about a new device request."""
+        """Notify current approver about a device request (NEW/EXISTING/REAPIR)."""
 
         template = self.template_env.get_template("device_request_notification.html")
 
@@ -174,7 +174,7 @@ class EmailManager:
         next_approver_role: str | None = None,
         scheduled_at: datetime | None = None,
     ) -> None:
-        """Send device request approval/rejection notification."""
+        """Send device request approval/rejection notification to a requester."""
 
         template = self.template_env.get_template("device_request_decision.html")
 

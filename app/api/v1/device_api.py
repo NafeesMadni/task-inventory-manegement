@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated
@@ -309,8 +307,12 @@ class DeviceAPI:
         )
 
         if not devices_request_record:
-            response.status_code = status.HTTP_404_NOT_FOUND
-            return StatusResponse(message="Request not found.")
+            response.status_code = status.HTTP_409_CONFLICT
+            return StatusResponse(
+                message=(
+                    "This request has either already been processed by you or is awaiting approval from a lower-level authority."
+                )
+            )
 
         if devices_request_record.status == DeviceRequestStatus.REJECTED:
             return StatusResponse(message="Request has already been rejected.")
@@ -334,17 +336,10 @@ class DeviceAPI:
                 message="Please provide all required details (device_specs, scheduled_at) to approve request for a new device."
             )
 
-        # For push notification about approve/reject
-        requester_email = devices_request_record.requester.email  # noqa: F841
+        next_request_approval: RequestApproval | None = None
 
         if decision == ApprovalDecision.REJECTED:
             devices_request_record.status = DeviceRequestStatus.REJECTED
-
-            await session.commit()
-
-            # Notify the requester about rejection
-
-            return StatusResponse(message="Request has been rejected.")
 
         elif payload.grant:
             # It's a last level, approve the NewRepairDevicesRequest.status, update neccessary info and return
@@ -377,11 +372,9 @@ class DeviceAPI:
                         device = devices_request_record.device
                         device.status = DeviceStatus.RESERVED
 
-                        session.add(device)
-
                     elif (
-                        devices_request_record.type == DeviceRequestType.NEW
-                        and payload.device_specs
+                        payload.device_specs
+                        and devices_request_record.type == DeviceRequestType.NEW
                     ):
                         device = await self._add_device_record(
                             payload.device_specs,
@@ -390,9 +383,6 @@ class DeviceAPI:
                         )
 
                         session.add(device)
-
-                    await session.commit()
-                    return StatusResponse(message="Request approved.")
 
             else:  # Find next approval, update NewRepairDevicesRequest.pending_by with that approval.id, and send a email notification to both pending approval and requester
                 next_request_approval = await session.scalar(
@@ -406,19 +396,52 @@ class DeviceAPI:
                         next_request_approval.approver_id
                     )
 
-                    session.add(devices_request_record)
-                    await session.commit()
-
-                    # Notify the next approval
-                    email = next_request_approval.approver.email  # noqa: F841
                 else:
-                    response.status_code = status.HTTP_404_NOT_FOUND
+                    response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
                     return StatusResponse(
-                        message="Request can't be processed, please try again or contact admin."
+                        message="Your request was processed successfully, but the next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
                     )
 
-            await session.commit()
-            return StatusResponse(message="Request successful.")
+        await session.commit()
+
+        await self.email_manager.send_device_request_decision(
+            to_email=devices_request_record.requester.email,
+            request_id=devices_request_record.id,
+            device_name=devices_request_record.device.name
+            if devices_request_record.device
+            else "Unknown",
+            approved=payload.grant,
+            approver_username=request_approval_record.approver.username,
+            approver_role=request_approval_record.approver.role.value or "Unknown",  # type: ignore
+            remarks=payload.remarks,
+            next_approver_username=next_request_approval.approver.username
+            if next_request_approval
+            else None,
+            next_approver_role=next_request_approval.approver.role.value  # type: ignore
+            if next_request_approval
+            else None,
+            scheduled_at=payload.scheduled_at if payload.scheduled_at else None,
+        )
+
+        if next_request_approval:
+            await self.email_manager.send_device_request_notification(
+                to_email=next_request_approval.approver.email,
+                approver_username=next_request_approval.approver.username,
+                requester_username=user.username,
+                requester_name=f"{user.first_name} {user.last_name}",
+                request_id=devices_request_record.id,
+                request_type=devices_request_record.type.value,
+                requested_at=devices_request_record.requested_at,
+                device_name=devices_request_record.device.name
+                if devices_request_record.device
+                else None,
+                device_serial=devices_request_record.serial_no
+                if devices_request_record.device
+                else None,
+                requested_specs=devices_request_record.requested_specs,
+            )
+
+        return StatusResponse(message=f"Request {decision.value} successful.")
 
     async def create_device_request(
         self,
@@ -539,5 +562,10 @@ class DeviceAPI:
                 requested_specs=payload.requested_specs,
             )
 
-        msg = "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
-        return StatusResponse(message=f"Request has been sent to {msg} for approval.")
+        decision_msg = (
+            "your supervisor" if user.role == UserRole.DEVELOPER else "the admin"
+        )
+
+        return StatusResponse(
+            message=f"Request has been sent to {decision_msg} for approval."
+        )
