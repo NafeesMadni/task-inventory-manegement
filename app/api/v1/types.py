@@ -40,13 +40,23 @@ class LoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
+    first_name: str
+    last_name: str
     username: str
+    role: UserRole | None
     email: EmailStr
 
 
 class SupervisorResponse(BaseModel):
     id: int
     username: str
+
+
+class LoginHistoryResponse(BaseModel):
+    username: str
+    ip: str | None = None
+    role: UserRole | None = None
+    logged_in_at: datetime
 
 
 class JoinRequestsResponse(BaseModel):

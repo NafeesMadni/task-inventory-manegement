@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Inventory Manager</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        header {
+            height: 70px;
+            padding: 0 7%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .logo {
+            color: #2563eb;
+            font-size: 21px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        #user-info {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 7px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-success {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .btn-success:hover {
+            background: #bbf7d0;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #334155;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 24px;
+        }
+
+        .page-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            gap: 15px;
+        }
+
+        .page-heading h1 {
+            font-size: 27px;
+            margin-bottom: 7px;
+        }
+
+        .page-heading p {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            padding: 20px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+
+        .stat-card p {
+            color: #64748b;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card h2 {
+            font-size: 27px;
+        }
+
+        .section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .section+.section {
+            margin-top: 25px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .section-header h2 {
+            font-size: 17px;
+        }
+
+        .section-header span {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            min-width: 850px;
+        }
+
+        th,
+        td {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            vertical-align: middle;
+        }
+
+        th {
+            color: #64748b;
+            font-weight: 600;
+            background: #f8fafc;
+        }
+
+        td {
+            color: #334155;
+        }
+
+        .note {
+            max-width: 230px;
+            line-height: 1.5;
+            color: #64748b;
+            overflow-wrap: anywhere;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .pending {
+            color: #a16207;
+            background: #fef9c3;
+        }
+
+        .approved {
+            color: #15803d;
+            background: #dcfce7;
+        }
+
+        .rejected {
+            color: #b91c1c;
+            background: #fee2e2;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #1d4ed8;
+            background: #dbeafe;
+            text-transform: capitalize;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .actions .btn {
+            padding: 8px 11px;
+        }
+
+        .message {
+            padding: 35px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .error {
+            color: #b91c1c;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* ---------- Login history ---------- */
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 14px;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .filter-group.grow {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            height: 38px;
+            padding: 0 10px;
+            font-size: 13px;
+            color: #334155;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            outline: none;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        }
+
+        .history-scroll {
+            max-height: 480px;
+            overflow: auto;
+        }
+
+        .history-scroll table {
+            min-width: 650px;
+        }
+
+        .history-scroll th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        @media (max-width: 650px) {
+            header {
+                padding: 0 18px;
+            }
+
+            main {
+                margin-top: 25px;
+                padding: 0 14px;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .page-heading {
+                align-items: flex-start;
+            }
+
+            #user-info {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <a href="/" class="logo">Inventory Manager</a>
+
+        <div class="header-right">
+            <span id="user-info">Loading...</span>
+            <button class="btn btn-secondary" onclick="logout()">
+                Logout
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <div class="page-heading">
+            <div>
+                <h1>Dashboard</h1>
+                <p>Manage and review user join requests.</p>
+            </div>
+
+            <button class="btn btn-primary" onclick="refreshAll()">
+                Refresh
+            </button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <p>Total Requests</p>
+                <h2 id="total-count">0</h2>
+            </div>
+
+            <div class="stat-card">
+                <p>Pending Requests</p>
+                <h2 id="pending-count">0</h2>
+            </div>
+
+            <div class="stat-card">
+                <p>Processed Requests</p>
+                <h2 id="processed-count">0</h2>
+            </div>
+        </div>
+
+        <section class="section">
+            <div class="section-header">
+                <h2>Join Requests</h2>
+                <span id="request-count">0 requests</span>
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Requester ID</th>
+                            <th>Requested Role</th>
+                            <th>Note</th>
+                            <th>Requested At</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="requests-table">
+                        <tr>
+                            <td colspan="7" class="message">
+                                Loading requests...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Login History (admin only, hidden until role is verified) -->
+        <section class="section hidden" id="login-history-section">
+            <div class="section-header">
+                <h2>Login History</h2>
+                <span id="history-count">0 records</span>
+            </div>
+
+            <div class="filters">
+                <div class="filter-group grow">
+                    <label for="filter-search">Search (username or IP)</label>
+                    <input type="text" id="filter-search" placeholder="e.g. john or 192.168.">
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter-role">Role</label>
+                    <select id="filter-role">
+                        <option value="">All roles</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter-from">From</label>
+                    <input type="date" id="filter-from">
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter-to">To</label>
+                    <input type="date" id="filter-to">
+                </div>
+
+                <button class="btn btn-secondary" onclick="clearHistoryFilters()">
+                    Clear
+                </button>
+            </div>
+
+            <div class="table-wrapper history-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>IP Address</th>
+                            <th>Logged In At</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="history-table">
+                        <tr>
+                            <td colspan="4" class="message">Loading login history...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = "/api/v1/user";
+
+        const table = document.getElementById("requests-table");
+        const historyTable = document.getElementById("history-table");
+        const historySection = document.getElementById("login-history-section");
+
+        let currentUser = null;
+        let loginHistory = [];
+
+        async function logout() {
+            try {
+                const response = await fetch(`${API_BASE}/logout`, {
+                    method: "POST",
+                    credentials: "include"
+                });
+
+                if (!response.ok) {
+                    const result = await response.json();
+                    throw new Error(result.message || "Logout failed.");
+                }
+
+                // Redirect to home only after successful logout.
+                window.location.href = "/";
+
+            } catch (error) {
+                alert(error.message || "Unable to logout. Please try again.");
+            }
+        }
+
+        async function initializeDashboard() {
+            try {
+                const response = await fetch(`${API_BASE}/me`, {
+                    credentials: "include"
+                });
+
+                if (response.status === 401) {
+                    window.location.href = "/signin";
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error("Unable to verify your account.");
+                }
+
+                const user = await response.json();
+                currentUser = user;
+
+                document.getElementById("user-info").textContent =
+                    `${user.first_name} ${user.last_name} (${user.role || "Pending"})`;
+
+                if (!["admin", "supervisor"].includes(user.role)) {
+                    table.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="message">
+                            You are not authorized to view join requests.
+                        </td>
+                    </tr>
+                `;
+                    return;
+                }
+
+                // Login history is for admins only.
+                if (user.role === "admin") {
+                    historySection.classList.remove("hidden");
+                    setupHistoryFilters();
+                }
+
+                await refreshAll();
+
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function refreshAll() {
+            const tasks = [loadJoinRequests()];
+
+            if (currentUser && currentUser.role === "admin") {
+                tasks.push(loadLoginHistory());
+            }
+
+            await Promise.all(tasks);
+        }
+
+        async function loadJoinRequests() {
+            table.innerHTML = `
+            <tr>
+                <td colspan="7" class="message">Loading requests...</td>
+            </tr>
+        `;
+
+            try {
+                const response = await fetch(`${API_BASE}/join-requests`, {
+                    method: "GET",
+                    credentials: "include"
+                });
+
+                if (response.status === 401) {
+                    window.location.href = "/signin";
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error("Unable to load join requests.");
+                }
+
+                const requests = await response.json();
+
+                renderRequests(requests);
+
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        function renderRequests(requests) {
+            const pending = requests.filter(
+                request => request.status === "PENDING"
+            );
+
+            const processed = requests.filter(
+                request => request.status !== "PENDING"
+            );
+
+            document.getElementById("total-count").textContent =
+                requests.length;
+
+            document.getElementById("pending-count").textContent =
+                pending.length;
+
+            document.getElementById("processed-count").textContent =
+                processed.length;
+
+            document.getElementById("request-count").textContent =
+                `${requests.length} requests`;
+
+            if (!requests.length) {
+                table.innerHTML = `
+                <tr>
+                    <td colspan="7" class="message">
+                        No join requests found.
+                    </td>
+                </tr>
+            `;
+                return;
+            }
+
+            table.innerHTML = requests.map(request => {
+                const status = request.status.toLowerCase();
+
+                const actions = status === "pending"
+                    ? `
+                    <div class="actions">
+                        <button
+                            class="btn btn-success"
+                            onclick="processRequest(${request.id}, true)">
+                            Approve
+                        </button>
+
+                        <button
+                            class="btn btn-danger"
+                            onclick="processRequest(${request.id}, false)">
+                            Reject
+                        </button>
+                    </div>
+                `
+                    : `
+                    <span style="color:#94a3b8">Processed</span>
+                `;
+
+                return `
+                <tr>
+                    <td>#${request.id}</td>
+                    <td>${escapeHTML(request.requested_by)}</td>
+                    <td>${escapeHTML(request.requested_role)}</td>
+                    <td class="note">
+                        ${escapeHTML(request.request_note || "No note provided")}
+                    </td>
+                    <td>${formatDate(request.requested_at)}</td>
+                    <td>
+                        <span class="status ${status}">
+                            ${escapeHTML(request.status)}
+                        </span>
+                    </td>
+                    <td>${actions}</td>
+                </tr>
+            `;
+            }).join("");
+        }
+
+        async function processRequest(requestId, grant) {
+            const action = grant ? "approve" : "reject";
+
+            let reason = null;
+
+            if (!grant) {
+                reason = prompt("Enter a reason for rejection (optional):");
+
+                if (reason === null) {
+                    return;
+                }
+            }
+
+            const confirmed = confirm(
+                `Are you sure you want to ${action} request #${requestId}?`
+            );
+
+            if (!confirmed) return;
+
+            const params = new URLSearchParams({
+                join_request_id: requestId,
+                grant: grant
+            });
+
+            if (reason && reason.trim()) {
+                params.append("reason", reason.trim());
+            }
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/process-join-request?${params.toString()}`,
+                    {
+                        method: "GET",
+                        credentials: "include"
+                    }
+                );
+
+                if (response.status === 401) {
+                    window.location.href = "/signin";
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || "Request processing failed.");
+                }
+
+                if (result.message !== "Success!") {
+                    alert(result.message || "Unable to process this request.");
+                    return;
+                }
+
+                alert(`Request #${requestId} ${grant ? "approved" : "rejected"} successfully.`);
+
+                await loadJoinRequests();
+
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        /* ---------- Login history ---------- */
+
+        async function loadLoginHistory() {
+            historyTable.innerHTML = `
+            <tr>
+                <td colspan="4" class="message">Loading login history...</td>
+            </tr>
+        `;
+
+            try {
+                const response = await fetch(`${API_BASE}/login-history`, {
+                    method: "GET",
+                    credentials: "include"
+                });
+
+                if (response.status === 401) {
+                    window.location.href = "/signin";
+                    return;
+                }
+
+                if (response.status === 403) {
+                    // Not an admin: hide the section entirely.
+                    historySection.classList.add("hidden");
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error("Unable to load login history.");
+                }
+
+                loginHistory = await response.json();
+
+                // Newest first.
+                loginHistory.sort(
+                    (a, b) => new Date(b.logged_in_at) - new Date(a.logged_in_at)
+                );
+
+                populateRoleFilter();
+                applyHistoryFilters();
+
+            } catch (error) {
+                historyTable.innerHTML = `
+                <tr>
+                    <td colspan="4" class="message error">
+                        ${escapeHTML(error.message)}
+                    </td>
+                </tr>
+            `;
+            }
+        }
+
+        function setupHistoryFilters() {
+            ["filter-search", "filter-role", "filter-from", "filter-to"].forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener(id === "filter-search" ? "input" : "change", applyHistoryFilters);
+            });
+        }
+
+        function populateRoleFilter() {
+            const select = document.getElementById("filter-role");
+            const selected = select.value;
+
+            const roles = [...new Set(
+                loginHistory.map(record => String(record.role ?? "")).filter(Boolean)
+            )].sort();
+
+            select.innerHTML = `<option value="">All roles</option>` +
+                roles.map(role =>
+                    `<option value="${escapeHTML(role)}">${escapeHTML(role)}</option>`
+                ).join("");
+
+            if (roles.includes(selected)) select.value = selected;
+        }
+
+        function applyHistoryFilters() {
+            const search = document.getElementById("filter-search").value.trim().toLowerCase();
+            const role = document.getElementById("filter-role").value;
+            const from = document.getElementById("filter-from").value;
+            const to = document.getElementById("filter-to").value;
+
+            const fromDate = from ? new Date(`${from}T00:00:00`) : null;
+            const toDate = to ? new Date(`${to}T23:59:59.999`) : null;
+
+            const filtered = loginHistory.filter(record => {
+                if (search) {
+                    const haystack =
+                        `${record.username ?? ""} ${record.ip ?? ""}`.toLowerCase();
+                    if (!haystack.includes(search)) return false;
+                }
+
+                if (role && String(record.role) !== role) return false;
+
+                if (fromDate || toDate) {
+                    const loggedIn = new Date(record.logged_in_at);
+                    if (Number.isNaN(loggedIn.getTime())) return false;
+                    if (fromDate && loggedIn < fromDate) return false;
+                    if (toDate && loggedIn > toDate) return false;
+                }
+
+                return true;
+            });
+
+            renderLoginHistory(filtered);
+        }
+
+        function renderLoginHistory(records) {
+            document.getElementById("history-count").textContent =
+                records.length === loginHistory.length
+                    ? `${records.length} records`
+                    : `${records.length} of ${loginHistory.length} records`;
+
+            if (!records.length) {
+                historyTable.innerHTML = `
+                <tr>
+                    <td colspan="4" class="message">
+                        No login records found.
+                    </td>
+                </tr>
+            `;
+                return;
+            }
+
+            historyTable.innerHTML = records.map(record => `
+                <tr>
+                    <td>${escapeHTML(record.username)}</td>
+                    <td>
+                        <span class="role-badge">${escapeHTML(record.role)}</span>
+                    </td>
+                    <td>${escapeHTML(record.ip || "-")}</td>
+                    <td>${formatDate(record.logged_in_at)}</td>
+                </tr>
+            `).join("");
+        }
+
+        function clearHistoryFilters() {
+            document.getElementById("filter-search").value = "";
+            document.getElementById("filter-role").value = "";
+            document.getElementById("filter-from").value = "";
+            document.getElementById("filter-to").value = "";
+            applyHistoryFilters();
+        }
+
+        /* ---------- Helpers ---------- */
+
+        function formatDate(value) {
+            if (!value) return "-";
+
+            const date = new Date(value);
+
+            if (Number.isNaN(date.getTime())) return "-";
+
+            return date.toLocaleString();
+        }
+
+        function escapeHTML(value) {
+            return String(value ?? "").replace(/[&<>"']/g, char => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#039;"
+            })[char]);
+        }
+
+        function showError(message) {
+            table.innerHTML = `
+            <tr>
+                <td colspan="7" class="message error">
+                    ${escapeHTML(message)}
+                </td>
+            </tr>
+        `;
+        }
+
+        initializeDashboard();
+    </script>
+
+</body>
+
+</html>
