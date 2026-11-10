@@ -76,7 +76,7 @@ class JoinRequestsResponse(BaseModel):
 # -----------------------------
 # DEVICE ENDPOINT MODELS
 # -----------------------------
-class _AddDeviceRequest(BaseModel):
+class AddDeviceRequest(BaseModel):
     name: str
     serial_no: str
     ram_gb: int
@@ -97,7 +97,7 @@ class ProcessDeviceRequest(BaseModel):
     scheduled_at: datetime | None = None
 
     # For new device approval by admin
-    device_specs: _AddDeviceRequest | None = None
+    device_specs: AddDeviceRequest | None = None
 
     @model_validator(mode="after")
     def check_specs_for_rejection(self) -> ProcessDeviceRequest:

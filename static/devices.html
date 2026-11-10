@@ -42,7 +42,10 @@
                     <h1>Devices <span class="role-badge" id="title-badge"></span></h1>
                     <p class="subtitle">Every device in the inventory, with its status and condition.</p>
                 </div>
-                <button class="btn btn-primary" id="refresh-btn">Refresh</button>
+                <div class="heading-actions">
+                    <button class="btn" id="refresh-btn">Refresh</button>
+                    <button class="btn btn-primary" id="add-btn">+ Add device</button>
+                </div>
             </div>
 
             <div class="stats" id="stats"></div>
@@ -103,6 +106,78 @@
             </div>
         </section>
     </main>
+
+    <dialog class="modal" id="add-dialog">
+        <form id="add-form" novalidate>
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h2>Add a device</h2>
+                </div>
+                <button type="button" class="icon-btn" id="add-close" aria-label="Close">&times;</button>
+            </div>
+
+            <p class="subtitle">The device is added as available and can be assigned right away.</p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="add-name">Device name</label>
+                    <input type="text" id="add-name" name="name" placeholder="e.g. ThinkPad T14" maxlength="150"
+                        required>
+                </div>
+                <div class="form-group">
+                    <label for="add-brand">Brand</label>
+                    <input type="text" id="add-brand" name="brand" placeholder="e.g. Lenovo" maxlength="100" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="add-serial">Serial number</label>
+                    <input type="text" id="add-serial" name="serial_no" placeholder="Unique serial number" required>
+                </div>
+                <div class="form-group">
+                    <label for="add-processor">Processor</label>
+                    <input type="text" id="add-processor" name="processor" placeholder="e.g. Intel Core i7-1355U"
+                        required>
+                </div>
+            </div>
+
+            <div class="form-row three">
+                <div class="form-group">
+                    <label for="add-ram">RAM (GB)</label>
+                    <input type="number" id="add-ram" name="ram_gb" min="1" step="1" placeholder="16" required>
+                </div>
+                <div class="form-group">
+                    <label for="add-ssd">SSD (GB)</label>
+                    <input type="number" id="add-ssd" name="ssd_gb" min="0" step="1" value="0" required>
+                </div>
+                <div class="form-group">
+                    <label for="add-hdd">HDD (GB)</label>
+                    <input type="number" id="add-hdd" name="hdd_gb" min="0" step="1" value="0" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="add-date">Purchase date</label>
+                    <input type="date" id="add-date" name="purchase_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="add-price">Purchase price</label>
+                    <input type="number" id="add-price" name="purchase_price" min="0" step="0.01" placeholder="0.00"
+                        required>
+                </div>
+            </div>
+
+            <div id="add-message" class="message" role="alert"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-lg" id="add-cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-lg" id="add-submit">Add device</button>
+            </div>
+        </form>
+    </dialog>
 
     <div class="toast" id="toast" role="status"></div>
 
@@ -221,6 +296,15 @@
         function bindEvents() {
             $("logout-btn").addEventListener("click", logout);
             $("refresh-btn").addEventListener("click", refresh);
+
+            // Add device dialog
+            $("add-btn").addEventListener("click", openAddDialog);
+            $("add-close").addEventListener("click", closeAddDialog);
+            $("add-cancel").addEventListener("click", closeAddDialog);
+            $("add-form").addEventListener("submit", submitAddDevice);
+            $("add-dialog").addEventListener("click", event => {
+                if (event.target === event.currentTarget) closeAddDialog(); // backdrop click
+            });
 
             // Status / condition are searched on the server; text search and sorting happen locally.
             $("filter-status").addEventListener("change", runSearch);
@@ -387,6 +471,99 @@
                     <td class="muted">#${escapeHTML(device.id)}</td>
                 </tr>`;
             }).join("");
+        }
+
+        /* ---------- Add device ---------- */
+
+        function localISO(date) {
+            const pad = n => String(n).padStart(2, "0");
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        }
+
+        function openAddDialog() {
+            $("add-form").reset();
+            $("add-message").className = "message";
+            $("add-date").max = localISO(new Date()); // a purchase can't be in the future
+            $("add-submit").disabled = false;
+            $("add-submit").textContent = "Add device";
+            $("add-dialog").showModal();
+            $("add-name").focus();
+        }
+
+        function closeAddDialog() {
+            $("add-dialog").close();
+        }
+
+        function showAddError(text) {
+            const box = $("add-message");
+            box.textContent = text;
+            box.className = "message show error";
+        }
+
+        function addErrorMessage(data, status) {
+            if (typeof data?.detail === "string") return data.detail;
+
+            if (Array.isArray(data?.detail)) {
+                return data.detail
+                    .map(e => `${(e.loc || []).slice(1).join(" ")}: ${e.msg}`.replace(/^: /, ""))
+                    .join(" · ");
+            }
+
+            if (data?.message) return data.message;
+
+            return status >= 500
+                ? "The server couldn't save this device. Check that the serial number isn't already in the inventory."
+                : "Unable to add the device. Please try again.";
+        }
+
+        async function submitAddDevice(event) {
+            event.preventDefault();
+
+            const form = event.currentTarget;
+            if (!form.reportValidity()) return;
+
+            const data = new FormData(form);
+            const text = key => String(data.get(key) ?? "").trim();
+
+            const payload = {
+                name: text("name"),
+                brand: text("brand"),
+                serial_no: text("serial_no"),
+                processor: text("processor"),
+                ram_gb: Number(data.get("ram_gb")),
+                ssd_gb: Number(data.get("ssd_gb") || 0),
+                hdd_gb: Number(data.get("hdd_gb") || 0),
+                purchase_date: `${text("purchase_date")}T00:00:00`,
+                purchase_price: Number(data.get("purchase_price")),
+            };
+
+            const button = $("add-submit");
+            button.disabled = true;
+            button.textContent = "Adding...";
+            $("add-message").className = "message";
+
+            try {
+                const response = await api("/device/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (!response) return;
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(addErrorMessage(result, response.status));
+
+                closeAddDialog();
+                toast(`${payload.name} added to the inventory.`);
+                await refresh();
+
+            } catch (error) {
+                showAddError(
+                    error instanceof TypeError ? "Unable to connect to the server." : error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = "Add device";
+            }
         }
 
         init();
