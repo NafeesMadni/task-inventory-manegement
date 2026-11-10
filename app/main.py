@@ -50,6 +50,11 @@ def dashboard():
     return FileResponse(BASE_DIR / "static" / "dashboard.html")
 
 
+@app.get("/devices", include_in_schema=False)
+def devices():
+    return FileResponse(BASE_DIR / "static" / "devices.html")
+
+
 @app.get("/signup", include_in_schema=False)
 def sign():
     return FileResponse(BASE_DIR / "static" / "signup.html")

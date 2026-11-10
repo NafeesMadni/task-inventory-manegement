@@ -17,6 +17,11 @@
                 <span>Device Portal</span>
             </a>
 
+            <nav class="site-nav">
+                <a href="/dashboard" class="nav-link active">Dashboard</a>
+                <a href="/devices" class="nav-link hidden" id="nav-devices">Devices</a>
+            </nav>
+
             <div class="header-right">
                 <div class="user-chip">
                     <span class="avatar sm" id="user-avatar">·</span>
@@ -286,6 +291,9 @@
                 `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>`;
             $("user-avatar").textContent =
                 `${first_name[0] || ""}${last_name[0] || ""}`.toUpperCase() || "·";
+
+            // The Devices page is admin-only, so only admins see the link.
+            $("nav-devices").classList.toggle("hidden", role !== "admin");
 
             // Highlight the viewer's role next to every panel title.
             document.querySelectorAll("[data-role-badge]").forEach(badge => {
