@@ -68,7 +68,7 @@ class Device(Base):
         nullable=False,
     )
 
-    # None?
+    # When device is handed over to someone else
     issued_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
