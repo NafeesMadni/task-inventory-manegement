@@ -4,139 +4,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Management</title>
-
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: Arial, sans-serif;
-            background: #f8fafc;
-            color: #1e293b;
-            min-height: 100vh;
-        }
-
-        header {
-            height: 70px;
-            padding: 0 8%;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: white;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .logo {
-            font-size: 21px;
-            font-weight: 700;
-            color: #2563eb;
-            text-decoration: none;
-        }
-
-        nav {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .btn {
-            padding: 10px 18px;
-            border-radius: 7px;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            transition: 0.2s;
-        }
-
-        .btn-outline {
-            color: #334155;
-            border: 1px solid #cbd5e1;
-        }
-
-        .btn-outline:hover {
-            background: #f1f5f9;
-        }
-
-        .btn-primary {
-            color: white;
-            background: #2563eb;
-            border: 1px solid #2563eb;
-        }
-
-        .btn-primary:hover {
-            background: #1d4ed8;
-        }
-
-        main {
-            min-height: calc(100vh - 70px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 30px;
-        }
-
-        .hero h1 {
-            font-size: clamp(30px, 5vw, 46px);
-            margin-bottom: 15px;
-        }
-
-        .hero p {
-            color: #64748b;
-            font-size: 16px;
-            line-height: 1.7;
-        }
-    </style>
+    <title>Device Portal</title>
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
 
 <body>
-    <header>
-        <a href="/" class="logo">Inventory Manager</a>
 
-        <nav id="navigation">
-            <a href="/signin" class="btn btn-outline">Sign In</a>
-            <a href="/signup" class="btn btn-primary">Sign Up</a>
-        </nav>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="brand">
+                <span class="brand-logo">D</span>
+                <span>Device Portal</span>
+            </a>
+
+            <nav class="header-right" id="navigation">
+                <a href="/signin" class="btn">Sign in</a>
+                <a href="/signup" class="btn btn-primary">Sign up</a>
+            </nav>
+        </div>
     </header>
 
     <main>
         <section class="hero">
-            <h1>Manage Your Inventory Easily</h1>
-            <p>
-                A simple platform to manage devices, track requests,
-                and streamline inventory operations.
+            <p class="eyebrow" id="hero-eyebrow">Device management, simplified</p>
+
+            <h1 id="hero-title">Manage your devices and access requests in one place</h1>
+
+            <p class="subtitle" id="hero-text">
+                A simple portal to track devices, review access requests,
+                and keep an eye on who signs in.
             </p>
+
+            <div class="hero-actions" id="hero-actions">
+                <a href="/signup" class="btn btn-primary btn-lg">Get started</a>
+                <a href="/signin" class="btn btn-lg">Sign in</a>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature">
+                <span>01</span>
+                <h3>Track devices</h3>
+                <p>Keep a clear record of every device and who is responsible for it.</p>
+            </div>
+            <div class="feature">
+                <span>02</span>
+                <h3>Approve access</h3>
+                <p>Supervisors and admins review join requests in a couple of clicks.</p>
+            </div>
+            <div class="feature">
+                <span>03</span>
+                <h3>Audit sign-ins</h3>
+                <p>Admins get a readable timeline of logins, grouped by day.</p>
+            </div>
         </section>
     </main>
 
     <script>
-        async function initializeNavigation() {
-            const navigation = document.getElementById("navigation");
+        function escapeHTML(value) {
+            return String(value ?? "").replace(/[&<>"']/g, char => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+            })[char]);
+        }
 
+        // Signed-in visitors see their role and a direct link to the dashboard.
+        // Guests simply keep the default content. No redirects happen here.
+        async function initializePage() {
             try {
-                const response = await fetch("/api/v1/user/me", {
-                    method: "GET",
-                    credentials: "include"
-                });
+                const response = await fetch("/api/v1/user/me", { credentials: "include" });
+                if (!response.ok) return;
 
-                if (response.ok) {
-                    navigation.innerHTML = `
-                        <a href="dashboard"
-                           class="btn btn-primary">
-                            Dashboard
-                        </a>
-                    `;
-                }
+                const user = await response.json();
+                const role = String(user.role || "pending").toLowerCase();
+                const badge = `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>`;
+
+                document.getElementById("navigation").innerHTML = `
+                    ${badge}
+                    <a href="/dashboard" class="btn btn-primary">Dashboard</a>`;
+
+                document.getElementById("hero-eyebrow").textContent = "Welcome back";
+                document.getElementById("hero-title").innerHTML =
+                    `${escapeHTML(user.first_name || "there")} ${badge}`;
+                document.getElementById("hero-text").textContent =
+                    "Pick up where you left off.";
+                document.getElementById("hero-actions").innerHTML =
+                    `<a href="/dashboard" class="btn btn-primary btn-lg">Open dashboard</a>`;
+
+                document.title = `Device Portal · ${role}`;
+
             } catch (error) {
                 console.error("Unable to verify authentication:", error);
             }
         }
 
-        initializeNavigation();
+        initializePage();
     </script>
 </body>
 

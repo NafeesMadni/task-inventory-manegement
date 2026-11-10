@@ -1,10 +1,7 @@
+const API_BASE_URL = "/api/v1";
+const DASHBOARD_URL = "/dashboard";
 
-const API_BASE_URL = "http://localhost:8000/api/v1";
-
-const DASHBOARD_URL = "dashboard";
-const LOGIN_URL = "login";
-
-// All API requests that use authentication cookies should use this.
+// All API requests that use authentication cookies go through this.
 async function apiRequest(endpoint, options = {}) {
     return fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
@@ -35,36 +32,21 @@ function getErrorMessage(data) {
     return data?.message || "Something went wrong. Please try again.";
 }
 
-async function getCurrentUser() {
-    const response = await apiRequest("/user/me");
-
-    if (response.status === 401) {
-        return null;
-    }
-
-    if (!response.ok) {
-        throw new Error("Unable to verify your session.");
-    }
-
-    return response.json();
-}
-
-// Redirect already authenticated users away from login/signup.
+// Already signed in? Skip the form and go straight to the dashboard.
+// A failed check (network error, server down) simply shows the form.
 async function redirectIfAuthenticated() {
     try {
-        const user = await getCurrentUser();
+        const response = await apiRequest("/user/me");
 
-        if (user) {
+        if (response.ok) {
             window.location.replace(DASHBOARD_URL);
             return true;
         }
-
-        return false;
     } catch (error) {
         console.error("Authentication check failed:", error);
-        showMessage("Unable to connect to the server. Please try again.");
-        return true;
     }
+
+    return false;
 }
 
 function setupPasswordToggle() {
@@ -79,37 +61,18 @@ function setupPasswordToggle() {
     });
 }
 
-async function verifySessionAndRedirect() {
-    const user = await getCurrentUser();
-
-    if (!user) {
-        throw new Error("Login succeeded, but the authentication session could not be verified.");
-    }
-
-    window.location.replace(DASHBOARD_URL);
-}
-
-// Login handler
-async function handleLogin(event) {
-    event.preventDefault();
-
-    const form = event.currentTarget;
-    const button = document.getElementById("submitButton");
-
+// Sends the request and, on success, goes straight to the dashboard.
+// The cookie is already set by the response, so no extra /me call is needed.
+async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel, successMessage }) {
     button.disabled = true;
-    button.textContent = "Signing in...";
+    button.textContent = busyLabel;
+
+    let redirecting = false;
 
     try {
-        const payload = {
-            email: form.email.value.trim(),
-            password: form.password.value,
-        };
-
-        const response = await apiRequest("/user/login", {
+        const response = await apiRequest(endpoint, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
         });
 
@@ -119,9 +82,9 @@ async function handleLogin(event) {
             throw new Error(getErrorMessage(data));
         }
 
-        showMessage("Login successful. Redirecting...", "success");
-
-        await verifySessionAndRedirect();
+        redirecting = true;
+        showMessage(successMessage, "success");
+        window.location.replace(DASHBOARD_URL);
 
     } catch (error) {
         showMessage(
@@ -130,9 +93,29 @@ async function handleLogin(event) {
                 : error.message
         );
     } finally {
-        button.disabled = false;
-        button.textContent = "Sign in";
+        if (!redirecting) {
+            button.disabled = false;
+            button.textContent = idleLabel;
+        }
     }
+}
+
+function handleLogin(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+
+    submitAuthForm({
+        endpoint: "/user/login",
+        payload: {
+            email: form.email.value.trim(),
+            password: form.password.value,
+        },
+        button: document.getElementById("submitButton"),
+        busyLabel: "Signing in...",
+        idleLabel: "Sign in",
+        successMessage: "Signed in. Redirecting...",
+    });
 }
 
 // Load supervisors for developer signup.
@@ -172,39 +155,42 @@ async function loadSupervisors() {
     }
 }
 
-// Signup role handling.
+// Signup: show supervisor picker for developers, and reflect the chosen role
+// in the page title badge.
 function setupRoleSelection() {
     const roleSelect = document.getElementById("requestedRole");
     const supervisorGroup = document.getElementById("supervisorGroup");
     const supervisorSelect = document.getElementById("requestedFrom");
+    const badge = document.getElementById("roleBadge");
 
     if (!roleSelect) return;
 
     function updateRoleFields() {
-        const isDeveloper = roleSelect.value === "developer";
+        const role = roleSelect.value;
+        const isDeveloper = role === "developer";
 
         supervisorGroup.classList.toggle("hidden", !isDeveloper);
         supervisorSelect.required = isDeveloper;
+
+        if (badge) {
+            badge.textContent = role;
+            badge.className = `role-badge ${role}`;
+        }
     }
 
     roleSelect.addEventListener("change", updateRoleFields);
     updateRoleFields();
 }
 
-// Signup handler
-async function handleSignup(event) {
+function handleSignup(event) {
     event.preventDefault();
 
     const form = event.currentTarget;
-    const button = document.getElementById("submitButton");
+    const role = form.requestedRole.value;
 
-    button.disabled = true;
-    button.textContent = "Creating account...";
-
-    try {
-        const role = form.requestedRole.value;
-
-        const payload = {
+    submitAuthForm({
+        endpoint: "/user/signup",
+        payload: {
             first_name: form.firstName.value.trim(),
             last_name: form.lastName.value.trim(),
             username: form.username.value.trim(),
@@ -215,52 +201,25 @@ async function handleSignup(event) {
                 ? Number(form.requestedFrom.value)
                 : null,
             request_note: form.requestNote.value.trim() || null,
-        };
-
-        const response = await apiRequest("/user/signup", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-        });
-
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-            throw new Error(getErrorMessage(data));
-        }
-
-        showMessage("Account created successfully. Redirecting...", "success");
-
-        // Your signup endpoint sets the access_token cookie.
-        await verifySessionAndRedirect();
-
-    } catch (error) {
-        showMessage(
-            error instanceof TypeError
-                ? "Unable to connect to the server."
-                : error.message
-        );
-    } finally {
-        button.disabled = false;
-        button.textContent = "Create account";
-    }
+        },
+        button: document.getElementById("submitButton"),
+        busyLabel: "Creating account...",
+        idleLabel: "Create account",
+        successMessage: "Account created. Redirecting...",
+    });
 }
 
 // Initialize authentication pages.
 document.addEventListener("DOMContentLoaded", async () => {
-    const isAuthPage = document.body.dataset.authPage;
+    const page = document.body.dataset.authPage;
 
-    if (!isAuthPage) return;
+    if (!page) return;
 
     setupPasswordToggle();
 
-    const redirected = await redirectIfAuthenticated();
+    if (await redirectIfAuthenticated()) return;
 
-    if (redirected) return;
-
-    if (isAuthPage === "signup") {
+    if (page === "signup") {
         setupRoleSelection();
         await loadSupervisors();
 
@@ -268,7 +227,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             .addEventListener("submit", handleSignup);
     }
 
-    if (isAuthPage === "login") {
+    if (page === "login") {
         document.getElementById("loginForm")
             .addEventListener("submit", handleLogin);
     }
