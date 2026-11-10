@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Device Portal</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+
+<body>
+
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="brand">
+                <span class="brand-logo">D</span>
+                <span>Device Portal</span>
+            </a>
+
+            <nav class="site-nav">
+                <a href="/dashboard" class="nav-link active">Dashboard</a>
+                <a href="/devices" class="nav-link hidden" id="nav-devices">Devices</a>
+            </nav>
+
+            <div class="header-right">
+                <div class="user-chip">
+                    <span class="avatar sm" id="user-avatar">·</span>
+                    <span class="user-name" id="user-info">Loading...</span>
+                </div>
+                <button class="btn" id="logout-btn">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="tabs-bar hidden" id="tabs-bar">
+        <nav class="tabs" id="tabs"></nav>
+    </div>
+
+    <main class="container">
+        <div class="page-note" id="page-message">Loading...</div>
+
+        <!-- ===== Join Requests ===== -->
+        <section id="panel-join-requests" class="hidden">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Access</p>
+                    <h1>Join Requests <span class="role-badge" data-role-badge></span></h1>
+                    <p class="subtitle">Review and process user access requests.</p>
+                </div>
+                <button class="btn btn-primary" data-refresh="join-requests">Refresh</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <p>Total requests</p>
+                    <h2 id="total-count">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Pending</p>
+                    <h2 id="pending-count">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Processed</p>
+                    <h2 id="processed-count">0</h2>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <div class="segmented" id="status-filter">
+                        <button class="active" data-status="all">All</button>
+                        <button data-status="pending">Pending</button>
+                        <button data-status="processed">Processed</button>
+                    </div>
+                    <span class="count" id="request-count">0 requests</span>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Requester</th>
+                                <th>Note</th>
+                                <th>Requested</th>
+                                <th>Reviewer</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requests-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== Login History (admin only) ===== -->
+        <section id="panel-login-history" class="hidden">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Security</p>
+                    <h1>Login History <span class="role-badge" data-role-badge></span></h1>
+                    <p class="subtitle">Sign-ins across your organization, newest first.</p>
+                </div>
+                <button class="btn btn-primary" data-refresh="login-history">Refresh</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <p>Logins</p>
+                    <h2 id="h-total">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Unique users</p>
+                    <h2 id="h-users">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Unique IPs</p>
+                    <h2 id="h-ips">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Latest login</p>
+                    <h2 id="h-latest">-</h2>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <div class="field grow">
+                        <label for="filter-search">Search</label>
+                        <input type="text" id="filter-search" placeholder="Username or IP address">
+                    </div>
+
+                    <div class="field">
+                        <label for="filter-role">Role</label>
+                        <select id="filter-role">
+                            <option value="">All roles</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="filter-from">From</label>
+                        <input type="date" id="filter-from">
+                    </div>
+
+                    <div class="field">
+                        <label for="filter-to">To</label>
+                        <input type="date" id="filter-to">
+                    </div>
+
+                    <button class="btn" id="clear-filters">Clear</button>
+                </div>
+
+                <div class="toolbar">
+                    <div class="segmented" id="range-filter">
+                        <button class="active" data-days="">All time</button>
+                        <button data-days="0">Today</button>
+                        <button data-days="7">7 days</button>
+                        <button data-days="30">30 days</button>
+                    </div>
+                    <span class="count" id="history-count">0 records</span>
+                </div>
+
+                <div class="timeline" id="history-list"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <script>
+        const API_BASE = "/api/v1/user";
+        const SITE = "Device Portal";
+
+        const $ = id => document.getElementById(id);
+
+        let currentUser = null;
+        let role = "pending";
+        let allowedRoutes = [];
+        let joinRequests = [];
+        let loginHistory = [];
+        let statusFilter = "all";
+        const loaded = {};
+
+        /* Each route: title, who can see it, how to load it. */
+        const ROUTES = [
+            { id: "join-requests", label: "Join Requests", roles: ["admin", "supervisor"], load: loadJoinRequests },
+            { id: "login-history", label: "Login History", roles: ["admin"], load: loadLoginHistory },
+        ];
+
+        /* ---------- Helpers ---------- */
+
+        function escapeHTML(value) {
+            return String(value ?? "").replace(/[&<>"']/g, char => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+            })[char]);
+        }
+
+        function formatDate(value) {
+            const date = new Date(value);
+            return !value || Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
+        }
+
+        function timeAgo(date) {
+            const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
+            if (seconds < 60) return "just now";
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            if (seconds < 7 * 86400) return `${Math.floor(seconds / 86400)}d ago`;
+            return "";
+        }
+
+        function localISO(date) {
+            const pad = n => String(n).padStart(2, "0");
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        }
+
+        function initials(name) {
+            return String(name || "?").trim().slice(0, 2).toUpperCase();
+        }
+
+        function tint(name) {
+            let hash = 0;
+            for (const char of String(name)) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+            return `av-${hash % 6}`;
+        }
+
+        let toastTimer;
+        function toast(message, type = "success") {
+            const el = $("toast");
+            el.textContent = message;
+            el.className = `toast show ${type === "error" ? "error" : ""}`;
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+        }
+
+        function tableMessage(tbody, cols, text, isError = false) {
+            tbody.innerHTML =
+                `<tr><td colspan="${cols}" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
+        }
+
+        // Returns the response, or null after sending an unauthenticated user to sign in.
+        async function api(path, options = {}) {
+            const response = await fetch(`${API_BASE}${path}`, { credentials: "include", ...options });
+            if (response.status === 401) {
+                window.location.replace("/signin");
+                return null;
+            }
+            return response;
+        }
+
+        /* ---------- Init / routing ---------- */
+
+        async function init() {
+            try {
+                const response = await api("/me");
+                if (!response) return;
+                if (!response.ok) throw new Error("Unable to verify your account.");
+
+                currentUser = await response.json();
+                role = String(currentUser.role || "pending").toLowerCase();
+                renderUser();
+
+                allowedRoutes = ROUTES.filter(r => r.roles.includes(role));
+
+                if (!allowedRoutes.length) {
+                    document.title = `Dashboard · ${role} | ${SITE}`;
+                    $("page-message").innerHTML =
+                        `Your account (<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>) ` +
+                        `doesn't have access to any dashboard sections yet.`;
+                    return;
+                }
+
+                $("page-message").classList.add("hidden");
+                buildTabs();
+                bindEvents();
+
+                window.addEventListener("hashchange", route);
+                route();
+
+            } catch (error) {
+                $("page-message").textContent = error.message;
+                $("page-message").classList.add("error");
+            }
+        }
+
+        function renderUser() {
+            const { first_name = "", last_name = "" } = currentUser;
+            $("user-info").innerHTML =
+                `${escapeHTML(`${first_name} ${last_name}`.trim())} ` +
+                `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>`;
+            $("user-avatar").textContent =
+                `${first_name[0] || ""}${last_name[0] || ""}`.toUpperCase() || "·";
+
+            // The Devices page is admin-only, so only admins see the link.
+            $("nav-devices").classList.toggle("hidden", role !== "admin");
+
+            // Highlight the viewer's role next to every panel title.
+            document.querySelectorAll("[data-role-badge]").forEach(badge => {
+                badge.textContent = role;
+                badge.classList.add(role);
+            });
+        }
+
+        function buildTabs() {
+            $("tabs").innerHTML = allowedRoutes
+                .map(r => `<a class="tab" href="#${r.id}" data-route="${r.id}">${r.label}</a>`)
+                .join("");
+
+            // A single tab isn't worth showing.
+            $("tabs-bar").classList.toggle("hidden", allowedRoutes.length < 2);
+        }
+
+        function route() {
+            const wanted = location.hash.slice(1);
+            const active = allowedRoutes.find(r => r.id === wanted) || allowedRoutes[0];
+
+            // Unknown or forbidden hash: fix the URL in place, no extra history entry.
+            if (wanted !== active.id) history.replaceState(null, "", `#${active.id}`);
+
+            ROUTES.forEach(r => $(`panel-${r.id}`).classList.toggle("hidden", r.id !== active.id));
+            document.querySelectorAll(".tab").forEach(tab =>
+                tab.classList.toggle("active", tab.dataset.route === active.id));
+
+            document.title = `${active.label} · ${role} | ${SITE}`;
+
+            if (!loaded[active.id]) {
+                loaded[active.id] = true;
+                active.load();
+            }
+        }
+
+        function bindEvents() {
+            $("logout-btn").addEventListener("click", logout);
+
+            document.querySelectorAll("[data-refresh]").forEach(btn =>
+                btn.addEventListener("click", () =>
+                    ROUTES.find(r => r.id === btn.dataset.refresh).load()));
+
+            /* Join requests */
+            $("status-filter").addEventListener("click", event => {
+                const btn = event.target.closest("button");
+                if (!btn) return;
+                statusFilter = btn.dataset.status;
+                document.querySelectorAll("#status-filter button")
+                    .forEach(b => b.classList.toggle("active", b === btn));
+                renderRequests();
+            });
+
+            $("requests-table").addEventListener("click", event => {
+                const btn = event.target.closest("button[data-action]");
+                if (btn) processRequest(Number(btn.dataset.id), btn.dataset.action === "approve");
+            });
+
+            /* Login history */
+            $("filter-search").addEventListener("input", applyHistoryFilters);
+            $("filter-role").addEventListener("change", applyHistoryFilters);
+
+            ["filter-from", "filter-to"].forEach(id =>
+                $(id).addEventListener("change", () => {
+                    setActiveRange(null);
+                    applyHistoryFilters();
+                }));
+
+            $("range-filter").addEventListener("click", event => {
+                const btn = event.target.closest("button");
+                if (!btn) return;
+
+                const days = btn.dataset.days;
+                $("filter-to").value = "";
+
+                if (days === "") {
+                    $("filter-from").value = "";
+                } else {
+                    const from = new Date();
+                    from.setDate(from.getDate() - Number(days));
+                    $("filter-from").value = localISO(from);
+                }
+
+                setActiveRange(btn);
+                applyHistoryFilters();
+            });
+
+            // Clicking a username or IP in the timeline filters by it.
+            $("history-list").addEventListener("click", event => {
+                const el = event.target.closest("[data-filter]");
+                if (!el) return;
+                $("filter-search").value = el.dataset.filter;
+                applyHistoryFilters();
+            });
+
+            $("clear-filters").addEventListener("click", () => {
+                ["filter-search", "filter-role", "filter-from", "filter-to"].forEach(id => $(id).value = "");
+                setActiveRange(document.querySelector('#range-filter [data-days=""]'));
+                applyHistoryFilters();
+            });
+        }
+
+        function setActiveRange(button) {
+            document.querySelectorAll("#range-filter button")
+                .forEach(b => b.classList.toggle("active", b === button));
+        }
+
+        async function logout() {
+            try {
+                const response = await api("/logout", { method: "POST" });
+                if (!response) return;
+                if (!response.ok) {
+                    const result = await response.json().catch(() => ({}));
+                    throw new Error(result.message || "Logout failed.");
+                }
+                window.location.replace("/signin");
+            } catch (error) {
+                toast(error.message || "Unable to logout.", "error");
+            }
+        }
+
+        /* ---------- Join requests ---------- */
+
+        async function loadJoinRequests() {
+            tableMessage($("requests-table"), 7, "Loading requests...");
+
+            try {
+                const response = await api("/join-requests");
+                if (!response) return;
+                if (!response.ok) throw new Error("Unable to load join requests.");
+
+                joinRequests = (await response.json()).map(r => ({
+                    ...r,
+                    _status: String(r.status ?? "").trim().toLowerCase()
+                }));
+                renderRequests();
+
+            } catch (error) {
+                tableMessage($("requests-table"), 7, error.message, true);
+            }
+        }
+
+        function person(username, role, title = "") {
+            if (!username) return `<span class="muted">-</span>`;
+            const r = String(role ?? "").toLowerCase();
+            return `<div class="person"${title ? ` title="${escapeHTML(title)}"` : ""}>
+                        <span class="person-name">${escapeHTML(username)}</span>
+                        ${r ? `<span class="role-badge ${escapeHTML(r)}">${escapeHTML(r)}</span>` : ""}
+                    </div>`;
+        }
+
+        function renderRequests() {
+            const pending = joinRequests.filter(r => r._status === "pending");
+
+            $("total-count").textContent = joinRequests.length;
+            $("pending-count").textContent = pending.length;
+            $("processed-count").textContent = joinRequests.length - pending.length;
+
+            const visible = joinRequests.filter(r => {
+                if (statusFilter === "pending") return r._status === "pending";
+                if (statusFilter === "processed") return r._status !== "pending";
+                return true;
+            });
+
+            $("request-count").textContent = `${visible.length} request${visible.length === 1 ? "" : "s"}`;
+
+            if (!visible.length) {
+                tableMessage($("requests-table"), 7, "No join requests found.");
+                return;
+            }
+
+            $("requests-table").innerHTML = visible.map(request => {
+                const isPending = request._status === "pending";
+
+                // Pending: who it is waiting on. Processed: who handled it, and when.
+                const reviewer = isPending
+                    ? `<span class="sub">Assigned to</span>` +
+                    (request.approval_username
+                        ? person(request.approval_username, request.approval_role)
+                        : `<span class="muted">Any admin</span>`)
+                    : `<span class="sub">Processed by</span>` +
+                    person(request.processed_by_username, request.processed_by_role) +
+                    `<span class="sub" style="margin:3px 0 0">${formatDate(request.processed_at)}</span>`;
+
+                const actions = isPending
+                    ? `<div class="actions">
+                           <button class="btn btn-sm btn-approve" data-action="approve" data-id="${request.id}">Approve</button>
+                           <button class="btn btn-sm btn-reject" data-action="reject" data-id="${request.id}">Reject</button>
+                       </div>`
+                    : `<span class="muted">-</span>`;
+
+                return `
+                <tr>
+                    <td class="muted">#${request.id}</td>
+                    <td>${person(request.requester_username, request.requester_role, "Requested role")}</td>
+                    <td class="note muted">${escapeHTML(request.request_note || "No note provided")}</td>
+                    <td class="muted">${formatDate(request.requested_at)}</td>
+                    <td>${reviewer}</td>
+                    <td><span class="status ${escapeHTML(request._status)}">${escapeHTML(request._status)}</span></td>
+                    <td>${actions}</td>
+                </tr>`;
+            }).join("");
+        }
+
+        async function processRequest(requestId, grant) {
+            let reason = null;
+
+            if (!grant) {
+                reason = prompt("Enter a reason for rejection (optional):");
+                if (reason === null) return;
+            }
+
+            if (!confirm(`Are you sure you want to ${grant ? "approve" : "reject"} request #${requestId}?`)) return;
+
+            const params = new URLSearchParams({ join_request_id: requestId, grant });
+            if (reason && reason.trim()) params.append("reason", reason.trim());
+
+            try {
+                const response = await api(`/process-join-request?${params}`);
+                if (!response) return;
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.message || "Request processing failed.");
+                if (result.message !== "Success!") {
+                    toast(result.message || "Unable to process this request.", "error");
+                    return;
+                }
+
+                toast(`Request #${requestId} ${grant ? "approved" : "rejected"}.`);
+                await loadJoinRequests();
+
+            } catch (error) {
+                toast(error.message, "error");
+            }
+        }
+
+        /* ---------- Login history ---------- */
+
+        async function loadLoginHistory() {
+            $("history-list").innerHTML = `<div class="empty">Loading login history...</div>`;
+
+            try {
+                const response = await api("/login-history");
+                if (!response) return;
+
+                if (response.status === 403) {
+                    $("history-list").innerHTML =
+                        `<div class="empty error">You are not authorized to view login history.</div>`;
+                    return;
+                }
+                if (!response.ok) throw new Error("Unable to load login history.");
+
+                loginHistory = (await response.json())
+                    .map(record => ({ ...record, _date: new Date(record.logged_in_at) }))
+                    .sort((a, b) => b._date - a._date);
+
+                flagNewIps();
+                populateRoleFilter();
+                applyHistoryFilters();
+
+            } catch (error) {
+                $("history-list").innerHTML = `<div class="empty error">${escapeHTML(error.message)}</div>`;
+            }
+        }
+
+        // Marks a login when the user signs in from an IP not seen earlier in their history.
+        function flagNewIps() {
+            const seen = new Map();
+
+            for (let i = loginHistory.length - 1; i >= 0; i--) {
+                const record = loginHistory[i];
+                const ips = seen.get(record.username) || new Set();
+
+                record._newIp = ips.size > 0 && !ips.has(record.ip);
+                ips.add(record.ip);
+                seen.set(record.username, ips);
+            }
+        }
+
+        function populateRoleFilter() {
+            const select = $("filter-role");
+            const selected = select.value;
+            const roles = [...new Set(loginHistory.map(r => String(r.role ?? "")).filter(Boolean))].sort();
+
+            select.innerHTML = `<option value="">All roles</option>` +
+                roles.map(r => `<option value="${escapeHTML(r)}">${escapeHTML(r)}</option>`).join("");
+
+            if (roles.includes(selected)) select.value = selected;
+        }
+
+        function dayLabel(date) {
+            const today = new Date();
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+
+            const full = date.toLocaleDateString(undefined, {
+                month: "short", day: "numeric",
+                ...(date.getFullYear() !== today.getFullYear() && { year: "numeric" })
+            });
+
+            if (date.toDateString() === today.toDateString()) return ["Today", full];
+            if (date.toDateString() === yesterday.toDateString()) return ["Yesterday", full];
+            return [date.toLocaleDateString(undefined, { weekday: "long" }), full];
+        }
+
+        function applyHistoryFilters() {
+            const search = $("filter-search").value.trim().toLowerCase();
+            const roleFilter = $("filter-role").value;
+            const from = $("filter-from").value;
+            const to = $("filter-to").value;
+
+            const fromDate = from ? new Date(`${from}T00:00:00`) : null;
+            const toDate = to ? new Date(`${to}T23:59:59.999`) : null;
+
+            const filtered = loginHistory.filter(record => {
+                if (search && !`${record.username ?? ""} ${record.ip ?? ""}`.toLowerCase().includes(search)) return false;
+                if (roleFilter && String(record.role) !== roleFilter) return false;
+
+                if (fromDate || toDate) {
+                    if (Number.isNaN(record._date.getTime())) return false;
+                    if (fromDate && record._date < fromDate) return false;
+                    if (toDate && record._date > toDate) return false;
+                }
+                return true;
+            });
+
+            renderHistoryStats(filtered);
+            renderTimeline(filtered);
+        }
+
+        function renderHistoryStats(records) {
+            $("h-total").textContent = records.length;
+            $("h-users").textContent = new Set(records.map(r => r.username)).size;
+            $("h-ips").textContent = new Set(records.map(r => r.ip)).size;
+            $("h-latest").textContent =
+                records.length ? (timeAgo(records[0]._date) || records[0]._date.toLocaleDateString()) : "-";
+
+            $("history-count").textContent = records.length === loginHistory.length
+                ? `${records.length} records`
+                : `${records.length} of ${loginHistory.length} records`;
+        }
+
+        function renderTimeline(records) {
+            if (!records.length) {
+                $("history-list").innerHTML = `<div class="empty">No login records match your filters.</div>`;
+                return;
+            }
+
+            // Group by local calendar day (records are already newest first).
+            const groups = new Map();
+            records.forEach(record => {
+                const key = record._date.toDateString();
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(record);
+            });
+
+            $("history-list").innerHTML = [...groups.values()].map(items => {
+                const [label, full] = dayLabel(items[0]._date);
+
+                const rows = items.map(record => {
+                    const recordRole = String(record.role || "").toLowerCase();
+                    const ago = timeAgo(record._date);
+
+                    return `
+                    <div class="log-row">
+                        <span class="avatar ${tint(record.username)}">${escapeHTML(initials(record.username))}</span>
+
+                        <div class="log-main">
+                            <button class="link-btn" data-filter="${escapeHTML(record.username)}"
+                                title="Filter by this user">${escapeHTML(record.username)}</button>
+                            <span class="role-badge ${escapeHTML(recordRole)}">${escapeHTML(recordRole)}</span>
+                            ${record._newIp
+                            ? `<span class="tag-new" title="First time this user appears from this IP in the loaded history">New IP</span>`
+                            : ""}
+                        </div>
+
+                        <button class="chip" data-filter="${escapeHTML(record.ip || "")}"
+                            title="Filter by this IP">${escapeHTML(record.ip || "-")}</button>
+
+                        <div class="log-time" title="${escapeHTML(formatDate(record.logged_in_at))}">
+                            <strong>${record._date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
+                            ${ago ? `<span>${ago}</span>` : ""}
+                        </div>
+                    </div>`;
+                }).join("");
+
+                return `
+                <div class="day-group">
+                    <div class="day-head">
+                        <span><strong>${escapeHTML(label)}</strong>${escapeHTML(full)}</span>
+                        <span>${items.length} login${items.length === 1 ? "" : "s"}</span>
+                    </div>
+                    ${rows}
+                </div>`;
+            }).join("");
+        }
+
+        init();
+    </script>
+
+</body>
+
+</html>

@@ -43,3 +43,23 @@ async def health():
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    return FileResponse(BASE_DIR / "static" / "dashboard.html")
+
+
+@app.get("/devices", include_in_schema=False)
+def devices():
+    return FileResponse(BASE_DIR / "static" / "devices.html")
+
+
+@app.get("/signup", include_in_schema=False)
+def sign():
+    return FileResponse(BASE_DIR / "static" / "signup.html")
+
+
+@app.get("/signin", include_in_schema=False)
+def signin():
+    return FileResponse(BASE_DIR / "static" / "signin.html")

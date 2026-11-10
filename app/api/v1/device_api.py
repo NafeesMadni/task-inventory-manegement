@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
+    AddDeviceRequest,
     AllDevicesRequestsResponse,
     AvailableDevicesResponse,
     MakeDeviceRequest,
@@ -14,7 +15,6 @@ from app.api.v1.types import (
     SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
-    _AddDeviceRequest,
     _RequestApprovals,
 )
 from app.database.models import (
@@ -180,7 +180,7 @@ class DeviceAPI:
 
     async def _add_device_record(
         self,
-        payload: _AddDeviceRequest,
+        payload: AddDeviceRequest,
         session: DBSession,
         status: DeviceStatus = DeviceStatus.AVAILABLE,
     ) -> Device:
@@ -237,7 +237,7 @@ class DeviceAPI:
 
     async def add_device(
         self,
-        payload: _AddDeviceRequest,
+        payload: AddDeviceRequest,
         user: GetCurrentUser,
         session: DBSession,
         response: Response,

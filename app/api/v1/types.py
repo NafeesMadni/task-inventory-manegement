@@ -40,7 +40,10 @@ class LoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
+    first_name: str
+    last_name: str
     username: str
+    role: UserRole | None
     email: EmailStr
 
 
@@ -49,23 +52,31 @@ class SupervisorResponse(BaseModel):
     username: str
 
 
+class LoginHistoryResponse(BaseModel):
+    username: str
+    ip: str | None = None
+    role: UserRole | None = None
+    logged_in_at: datetime
+
+
 class JoinRequestsResponse(BaseModel):
     id: int
-    requested_role: UserRole
-    requested_by: int
-    requested_from: int
+    requester_role: UserRole
+    requester_username: str
+    approval_role: UserRole
+    approval_username: str
     request_note: str | None
     status: JoinRequestStatus
     requested_at: datetime
-    processed_by: int | None
+    processed_by_username: str | None
+    processed_by_role: UserRole | None
     processed_at: datetime | None
-    processed_reason: str | None
 
 
 # -----------------------------
 # DEVICE ENDPOINT MODELS
 # -----------------------------
-class _AddDeviceRequest(BaseModel):
+class AddDeviceRequest(BaseModel):
     name: str
     serial_no: str
     ram_gb: int
@@ -86,7 +97,7 @@ class ProcessDeviceRequest(BaseModel):
     scheduled_at: datetime | None = None
 
     # For new device approval by admin
-    device_specs: _AddDeviceRequest | None = None
+    device_specs: AddDeviceRequest | None = None
 
     @model_validator(mode="after")
     def check_specs_for_rejection(self) -> ProcessDeviceRequest:
