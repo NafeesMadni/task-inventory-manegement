@@ -34,6 +34,7 @@ class LoginHistory(Base):
         nullable=True,
     )
 
+    # Relationships
     user: Mapped[User] = relationship(
         back_populates="login_history", foreign_keys=[user_id]
     )  # For the relationship with the User model, allowing access to the user associated with this login history entry.

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -24,6 +22,13 @@ class Settings(BaseSettings):
 
     INITIAL_ADMIN_EMAIL: str = Field(alias="INITIAL_ADMIN_EMAIL")
     INITIAL_ADMIN_PASSWORD: str = Field(alias="INITIAL_ADMIN_PASSWORD")
+
+    CELERY_RESULT_BACKEND: str = Field(
+        alias="CELERY_RESULT_BACKEND", default="redis://localhost:6379/0"
+    )
+    CELERY_BROKER_URL: str = Field(
+        alias="CELERY_BROKER_URL", default="redis://localhost:6379/0"
+    )
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
