@@ -1010,3 +1010,24 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Person cell (join requests) ---------- */
+
+.person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.person-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sub {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}

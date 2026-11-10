@@ -197,31 +197,42 @@ class UserAPI:
         self, user: GetCurrentUser, session: DBSession, response: Response
     ) -> list[JoinRequestsResponse]:
 
+        stmt = select(JoinRequest).options(
+            selectinload(JoinRequest.requester),
+            selectinload(JoinRequest.requested_from_user),
+            selectinload(JoinRequest.processor),
+        )
+
         if user.role == UserRole.ADMIN:
             # Admin can see all join requests
-            result = await session.scalars(select(JoinRequest))
-            join_requests = result.all()
+            pass
 
         elif user.role == UserRole.SUPERVISOR:
             # Supervisor can see requests addressed to them
-            join_requests = user.received_join_requests
+            stmt = stmt.where(JoinRequest.requested_from == user.id)
 
         else:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return []
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You're not authorized to view join requests",
+            )
+
+        result = await session.scalars(stmt)
+        join_requests = result.all()
 
         return [
             JoinRequestsResponse(
                 id=jr.id,
-                requested_role=jr.requested_role,
-                requested_by=jr.requested_by,
-                requested_from=jr.requested_from,
-                request_note=jr.request_note or "",
+                requester_role=jr.requested_role,
+                requester_username=jr.requester.username,
+                approval_role=jr.requested_from_user.role,  # type: ignore
+                approval_username=jr.requested_from_user.username,
+                request_note=jr.request_note or None,
                 status=jr.status,
                 requested_at=jr.created_at,
-                processed_by=jr.processed_by,
-                processed_at=jr.processed_at,
-                processed_reason=jr.processed_reason,
+                processed_by_username=jr.processor.username if jr.processor else None,
+                processed_by_role=jr.processor.role if jr.processor else None,
+                processed_at=jr.processed_at or None,
             )
             for jr in join_requests
         ]
@@ -313,7 +324,7 @@ class UserAPI:
     ) -> list[LoginHistoryResponse]:
 
         history: list[LoginHistoryResponse] = []
-    
+
         if user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Admins only"

@@ -61,15 +61,16 @@ class LoginHistoryResponse(BaseModel):
 
 class JoinRequestsResponse(BaseModel):
     id: int
-    requested_role: UserRole
-    requested_by: int
-    requested_from: int
+    requester_role: UserRole
+    requester_username: str
+    approval_role: UserRole
+    approval_username: str
     request_note: str | None
     status: JoinRequestStatus
     requested_at: datetime
-    processed_by: int | None
+    processed_by_username: str | None
+    processed_by_role: UserRole | None
     processed_at: datetime | None
-    processed_reason: str | None
 
 
 # -----------------------------

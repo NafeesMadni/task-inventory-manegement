@@ -76,9 +76,9 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Requester</th>
-                                <th>Role</th>
                                 <th>Note</th>
                                 <th>Requested</th>
+                                <th>Reviewer</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -417,7 +417,10 @@
                 if (!response) return;
                 if (!response.ok) throw new Error("Unable to load join requests.");
 
-                joinRequests = await response.json();
+                joinRequests = (await response.json()).map(r => ({
+                    ...r,
+                    _status: String(r.status ?? "").trim().toLowerCase()
+                }));
                 renderRequests();
 
             } catch (error) {
@@ -425,16 +428,25 @@
             }
         }
 
+        function person(username, role, title = "") {
+            if (!username) return `<span class="muted">-</span>`;
+            const r = String(role ?? "").toLowerCase();
+            return `<div class="person"${title ? ` title="${escapeHTML(title)}"` : ""}>
+                        <span class="person-name">${escapeHTML(username)}</span>
+                        ${r ? `<span class="role-badge ${escapeHTML(r)}">${escapeHTML(r)}</span>` : ""}
+                    </div>`;
+        }
+
         function renderRequests() {
-            const pending = joinRequests.filter(r => r.status === "PENDING");
+            const pending = joinRequests.filter(r => r._status === "pending");
 
             $("total-count").textContent = joinRequests.length;
             $("pending-count").textContent = pending.length;
             $("processed-count").textContent = joinRequests.length - pending.length;
 
             const visible = joinRequests.filter(r => {
-                if (statusFilter === "pending") return r.status === "PENDING";
-                if (statusFilter === "processed") return r.status !== "PENDING";
+                if (statusFilter === "pending") return r._status === "pending";
+                if (statusFilter === "processed") return r._status !== "pending";
                 return true;
             });
 
@@ -446,24 +458,33 @@
             }
 
             $("requests-table").innerHTML = visible.map(request => {
-                const status = request.status.toLowerCase();
-                const requestedRole = String(request.requested_role || "").toLowerCase();
+                const isPending = request._status === "pending";
 
-                const actions = status === "pending"
+                // Pending: who it is waiting on. Processed: who handled it, and when.
+                const reviewer = isPending
+                    ? `<span class="sub">Assigned to</span>` +
+                    (request.approval_username
+                        ? person(request.approval_username, request.approval_role)
+                        : `<span class="muted">Any admin</span>`)
+                    : `<span class="sub">Processed by</span>` +
+                    person(request.processed_by_username, request.processed_by_role) +
+                    `<span class="sub" style="margin:3px 0 0">${formatDate(request.processed_at)}</span>`;
+
+                const actions = isPending
                     ? `<div class="actions">
                            <button class="btn btn-sm btn-approve" data-action="approve" data-id="${request.id}">Approve</button>
                            <button class="btn btn-sm btn-reject" data-action="reject" data-id="${request.id}">Reject</button>
                        </div>`
-                    : `<span class="muted">Processed</span>`;
+                    : `<span class="muted">-</span>`;
 
                 return `
                 <tr>
                     <td class="muted">#${request.id}</td>
-                    <td>${escapeHTML(request.requested_by)}</td>
-                    <td><span class="role-badge ${escapeHTML(requestedRole)}">${escapeHTML(requestedRole)}</span></td>
+                    <td>${person(request.requester_username, request.requester_role, "Requested role")}</td>
                     <td class="note muted">${escapeHTML(request.request_note || "No note provided")}</td>
                     <td class="muted">${formatDate(request.requested_at)}</td>
-                    <td><span class="status ${escapeHTML(status)}">${escapeHTML(status)}</span></td>
+                    <td>${reviewer}</td>
+                    <td><span class="status ${escapeHTML(request._status)}">${escapeHTML(request._status)}</span></td>
                     <td>${actions}</td>
                 </tr>`;
             }).join("");
