@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
     JoinRequestsResponse,
+    LoginHistoryResponse,
     LoginRequest,
     SignupRequest,
     StatusResponse,
@@ -42,9 +43,17 @@ class UserAPI:
             status_code=status.HTTP_201_CREATED,
         )
         self.router.add_api_route(
+            "/me",
+            endpoint=self.get_me,
+            methods=["get"],
+            response_model=UserResponse,
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
             "/join-requests",
             endpoint=self.get_join_requests,
             methods=["GET"],
+            response_model=list[JoinRequestsResponse],
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
@@ -64,6 +73,19 @@ class UserAPI:
         self.router.add_api_route(
             "/login",
             endpoint=self.login,
+            methods=["POST"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/login-history",
+            endpoint=self.get_users_login_history,
+            methods=["GET"],
+            response_model=list[LoginHistoryResponse],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/logout",
+            endpoint=self.logout,
             methods=["POST"],
             status_code=status.HTTP_200_OK,
         )
@@ -152,7 +174,14 @@ class UserAPI:
             expires=max_age,
         )
 
-        return UserResponse(id=user.id, username=user.username, email=user.email)
+        return UserResponse(
+            id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            role=user.role,
+            email=user.email,
+        )
 
     async def active_supervisors(self, session: DBSession) -> list[SupervisorResponse]:
         result = await session.execute(
@@ -277,6 +306,38 @@ class UserAPI:
         )
         return StatusResponse(message="Success!")
 
+    async def get_users_login_history(
+        self,
+        user: GetCurrentUser,
+        session: DBSession,
+    ) -> list[LoginHistoryResponse]:
+
+        history: list[LoginHistoryResponse] = []
+    
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admins only"
+            )
+
+        records = await session.scalars(
+            select(LoginHistory)
+            .options(selectinload(LoginHistory.user))
+            .order_by(LoginHistory.signed_in_at.desc())
+        )
+        login_history = records.all()
+
+        for record in login_history:
+            history.append(
+                LoginHistoryResponse(
+                    username=record.user.username,
+                    ip=record.ip,
+                    role=record.user.role,
+                    logged_in_at=record.signed_in_at,
+                )
+            )
+
+        return history
+
     async def login(
         self,
         payload: LoginRequest,
@@ -358,7 +419,36 @@ class UserAPI:
         access_token = JWTProvider.create_access_token(user.id)
 
         response.set_cookie(
-            key="access_token", value=access_token, max_age=max_age, expires=max_age
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,  # True in production with HTTPS
+            samesite="lax",
+            max_age=max_age,
+            expires=max_age,
+            path="/",
         )
 
         return {"message": "Login successful"}
+
+    async def get_me(self, user: GetCurrentUser) -> UserResponse:
+
+        return UserResponse(
+            id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            role=user.role,
+            email=user.email,
+        )
+
+    async def logout(self, response: Response):
+        response.delete_cookie(
+            key="access_token",
+            path="/",
+            httponly=True,
+            secure=True,  # Match your cookie configuration
+            samesite="lax",
+        )
+
+        return StatusResponse(message="Successfully logged out.")
