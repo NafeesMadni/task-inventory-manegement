@@ -9,10 +9,30 @@ from fastapi.concurrency import run_in_threadpool
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.core.config import get_settings
+from app.database.models import DeviceRequestType
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates" / "email"
 
 settings = get_settings()
+
+SCHEDULE_MESSAGES = {
+    DeviceRequestType.NEW: {
+        "title": "New Device Handover Scheduled",
+        "message": "Your new device request has been approved. "
+        "The device handover is scheduled for:",
+        "action": "Device Handover",
+    },
+    DeviceRequestType.EXISTING: {
+        "title": "Existing Device Handover Scheduled",
+        "message": "Your requested device is scheduled for collection or handover on:",
+        "action": "Device Handover",
+    },
+    DeviceRequestType.REPAIR: {
+        "title": "Device Repair Scheduled",
+        "message": "The repair of your device is scheduled for:",
+        "action": "Device Repair",
+    },
+}
 
 
 @dataclass
@@ -200,5 +220,39 @@ class EmailManager:
         decision = "Approved" if approved else "Rejected"
 
         subject = f"{self.config.app_name} - Device Request #{request_id} {decision}"
+
+        await self._send(to_email, subject, body)
+
+    async def send_device_scheduled_reminder(
+        self,
+        to_email: str,
+        requester_username: str,
+        request_id: int,
+        request_type: DeviceRequestType,
+        device_name: str,
+        device_serial: str,
+        scheduled_at: datetime,
+    ) -> None:
+        """Notify requester when their device schedule arrives."""
+
+        template = self.template_env.get_template("device_scheduled_reminder.html")
+
+        schedule_info = SCHEDULE_MESSAGES[request_type]
+
+        context = {
+            "app_name": self.config.app_name,
+            "requester_username": requester_username,
+            "request_id": request_id,
+            "title": schedule_info["title"],
+            "message": schedule_info["message"],
+            "action": schedule_info["action"],
+            "device_name": device_name,
+            "device_serial": device_serial,
+            "scheduled_at": scheduled_at.strftime("%d %B %Y, %I:%M %p"),
+        }
+
+        body = template.render(**context)
+
+        subject = f"{self.config.app_name} - Device Schedule Reminder #{request_id}"
 
         await self._send(to_email, subject, body)

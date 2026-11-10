@@ -23,11 +23,7 @@ class DeviceRepair(Base):
             unique=True,
             postgresql_where=text("status IN ('scheduled', 'in_progress')"),
         ),
-        enum_check_constraint(
-            RepairStatus,
-            "status",
-            "ck_device_repairs_status",
-        ),
+        enum_check_constraint(RepairStatus, "status", "ck_device_repairs_status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -121,12 +121,29 @@ class AllDevicesRequestsResponse(BaseModel):
 class MakeDeviceRequest(BaseModel):
     type: DeviceRequestType
 
-    # Only for DeviceRequestType.EXISTING | DeviceRequestType.REPAIR
-    # For DeviceRequestType.REPAIR, check device assignment whether this device is in used by this requester?
+    issue: str
+
+    # Required for EXISTING and REPAIR
     device_id: int | None = None
 
-    # Only for DeviceRequestType.NEW
+    # Required for NEW
     requested_specs: str | None = None
+
+    @model_validator(mode="after")
+    def validate_request(self):
+        if (
+            self.type in (DeviceRequestType.EXISTING, DeviceRequestType.REPAIR)
+            and self.device_id is None
+        ):
+            raise ValueError(f"device_id is required for {self.type.value} requests.")
+
+        if self.type == DeviceRequestType.NEW and not self.requested_specs:
+            raise ValueError("requested_specs is required for new device requests.")
+
+        if self.type == DeviceRequestType.REPAIR and not self.issue.strip():
+            raise ValueError("Please describe the issue with your device.")
+
+        return self
 
 
 class AvailableDevicesResponse(BaseModel):
