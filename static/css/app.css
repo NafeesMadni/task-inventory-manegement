@@ -1204,3 +1204,106 @@ th {
     flex-direction: column;
   }
 }
+
+/* ---------- Device requests ---------- */
+
+.segmented.full {
+  display: flex;
+}
+
+.segmented.full button {
+  flex: 1;
+}
+
+.route-hint {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.approvals {
+  display: grid;
+  gap: 8px;
+}
+
+.approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+}
+
+.approval .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #cfd8d2;
+}
+
+.approval.ok .dot {
+  background: var(--primary);
+}
+.approval.warn .dot {
+  background: #d9a53b;
+}
+.approval.bad .dot {
+  background: var(--danger);
+}
+
+/* ---------- Request dialog: device picker ---------- */
+
+.picker {
+  max-height: 230px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2ef;
+  cursor: pointer;
+}
+
+.pick:last-child {
+  border-bottom: none;
+}
+
+.pick:hover {
+  background: var(--row-hover);
+}
+
+.pick:has(input:checked) {
+  background: var(--primary-soft);
+}
+
+.pick input {
+  flex: none;
+  width: auto;
+  min-height: 0;
+  margin-top: 3px;
+  accent-color: var(--primary);
+}
+
+.picker .empty {
+  padding: 28px 16px;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remark {
+  margin-top: 2px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}

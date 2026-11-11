@@ -116,6 +116,7 @@ class DeviceAPI:
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
+                    selectinload(DevicesRequest.requester),
                 )
             )
             devices_requests = result.all()
@@ -128,6 +129,7 @@ class DeviceAPI:
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
+                    selectinload(DevicesRequest.requester),
                 )
                 .where(RequestApproval.approver_id == user.id)
             )
@@ -143,6 +145,7 @@ class DeviceAPI:
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
+                    selectinload(DevicesRequest.requester),
                 )
                 .where(DevicesRequest.requested_by == user.id)
             )
@@ -168,6 +171,7 @@ class DeviceAPI:
             resp_data.append(
                 AllDevicesRequestsResponse(
                     request_id=device_request.id,
+                    requester_username=device_request.requester.username,
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,

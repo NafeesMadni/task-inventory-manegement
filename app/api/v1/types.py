@@ -120,6 +120,7 @@ class _RequestApprovals(BaseModel):
 
 class AllDevicesRequestsResponse(BaseModel):
     request_id: int
+    requester_username: str
     requested_at: datetime
     type: DeviceRequestType
     status: DeviceRequestStatus
