@@ -76,11 +76,12 @@
 
                 const user = await response.json();
                 const role = String(user.role || "pending").toLowerCase();
+                const home = role === "developer" ? "/devices" : "/dashboard";
                 const badge = `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>`;
 
                 document.getElementById("navigation").innerHTML = `
                     ${badge}
-                    <a href="/dashboard" class="btn btn-primary">Dashboard</a>`;
+                    <a href="${home}" class="btn btn-primary">Dashboard</a>`;
 
                 document.getElementById("hero-eyebrow").textContent = "Welcome back";
                 document.getElementById("hero-title").innerHTML =
@@ -88,7 +89,7 @@
                 document.getElementById("hero-text").textContent =
                     "Pick up where you left off.";
                 document.getElementById("hero-actions").innerHTML =
-                    `<a href="/dashboard" class="btn btn-primary btn-lg">Open dashboard</a>`;
+                    `<a href="${home}" class="btn btn-primary btn-lg">Open dashboard</a>`;
 
                 document.title = `Device Portal · ${role}`;
 
