@@ -30,6 +30,11 @@ class Settings(BaseSettings):
         alias="CELERY_BROKER_URL", default="redis://localhost:6379/0"
     )
 
+    SESSION_SECRET: str = Field(alias="SESSION_SECRET")
+
+    GOOGLE_CLIENT_ID: str = Field(alias="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: str = Field(alias="GOOGLE_CLIENT_SECRET")
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _use_psycopg_driver(cls, value: str) -> str:

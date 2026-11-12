@@ -101,6 +101,7 @@ const Portal = (() => {
                         <span class="avatar sm" id="user-avatar">·</span>
                         <span class="user-name" id="user-info">Loading...</span>
                     </div>
+                    <a href="/create-join-request" class="btn btn-primary hidden" id="request-access-btn">Request access</a>
                     <button class="btn" id="logout-btn">Logout</button>
                 </div>
             </div>`;
@@ -118,6 +119,10 @@ const Portal = (() => {
         $("user-avatar").textContent = `${first[0] || ""}${last[0] || ""}`.toUpperCase() || "·";
 
         const here = location.pathname.replace(/\/+$/, "") || "/";
+
+        // Signed in but no role yet: always offer the way to ask for access.
+        $("request-access-btn").classList.toggle(
+            "hidden", role !== "pending" || here === "/create-join-request");
 
         $("site-nav").innerHTML = NAV
             .filter(link => link.roles.includes(role))
@@ -147,6 +152,19 @@ const Portal = (() => {
         } catch (error) {
             toast(error.message || "Unable to logout.", "error");
         }
+    }
+
+    // Message shown when a signed-in user has nothing to see on a page.
+    // Users without a role also get a button to the join-request page.
+    function noAccessHTML(userRole, what) {
+        const badge = `<span class="role-badge ${escapeHTML(userRole)}">${escapeHTML(userRole)}</span>`;
+
+        return `<div class="no-access">
+                    <p>Your account (${badge}) doesn't have access to ${what} yet.</p>
+                    ${userRole === "pending"
+                        ? `<a href="/create-join-request" class="btn btn-primary btn-lg">Request access</a>`
+                        : ""}
+                </div>`;
     }
 
     function setTitle(label) {
@@ -179,5 +197,5 @@ const Portal = (() => {
         renderShell();
     }
 
-    return { $, api, escapeHTML, pretty, toast, errorMessage, setTitle, start };
+    return { $, api, escapeHTML, pretty, toast, errorMessage, noAccessHTML, setTitle, start };
 })();

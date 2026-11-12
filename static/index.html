@@ -76,20 +76,24 @@
 
                 const user = await response.json();
                 const role = String(user.role || "pending").toLowerCase();
-                const home = role === "developer" ? "/devices" : "/dashboard";
+                // No role yet: the useful next step is asking for access.
+                const noRole = role === "pending";
+                const home = noRole ? "/create-join-request"
+                    : role === "developer" ? "/devices" : "/dashboard";
                 const badge = `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>`;
 
                 document.getElementById("navigation").innerHTML = `
                     ${badge}
-                    <a href="${home}" class="btn btn-primary">Dashboard</a>`;
+                    <a href="${home}" class="btn btn-primary">${noRole ? "Request access" : "Dashboard"}</a>`;
 
                 document.getElementById("hero-eyebrow").textContent = "Welcome back";
                 document.getElementById("hero-title").innerHTML =
                     `${escapeHTML(user.first_name || "there")} ${badge}`;
                 document.getElementById("hero-text").textContent =
-                    "Pick up where you left off.";
+                    noRole ? "Your account doesn't have access yet. Request a role to get started."
+                        : "Pick up where you left off.";
                 document.getElementById("hero-actions").innerHTML =
-                    `<a href="${home}" class="btn btn-primary btn-lg">Open dashboard</a>`;
+                    `<a href="${home}" class="btn btn-primary btn-lg">${noRole ? "Request access" : "Open dashboard"}</a>`;
 
                 document.title = `Device Portal · ${role}`;
 

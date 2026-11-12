@@ -1,18 +1,24 @@
+import re
 from datetime import UTC, datetime
 from typing import Annotated
 
+from authlib.integrations.base_client.errors import OAuthError
+from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from redis_fastapi import RateLimitBackendDep
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
+    ActiveApprovalsResponse,
+    AuthResponse,
+    CreateJoinReqRequest,
     JoinRequestsResponse,
     LoginHistoryResponse,
     LoginRequest,
     SignupRequest,
     StatusResponse,
-    SupervisorResponse,
     UserResponse,
 )
 from app.core.config import get_settings
@@ -30,23 +36,80 @@ from app.services import AuthProvider, EmailManager, JWTProvider
 
 class UserAPI:
     def __init__(self) -> None:
+        self.settings = get_settings()
+
         self.router = APIRouter(prefix="/user", tags=["User Endpoint"])
+
         self._register_routes()
+
+        oauth = OAuth()
+
+        oauth.register(
+            name="google",
+            client_id=self.settings.GOOGLE_CLIENT_ID,
+            client_secret=self.settings.GOOGLE_CLIENT_SECRET,
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+
+        self.google_oauth = oauth.google
+
         self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
+        # Simple Signup/Login flow
         self.router.add_api_route(
             "/signup",
             endpoint=self.signup,
             methods=["POST"],
-            response_model=UserResponse,
+            response_model=AuthResponse,
             status_code=status.HTTP_201_CREATED,
         )
+        self.router.add_api_route(
+            "/login",
+            endpoint=self.login,
+            methods=["POST"],
+            response_model=AuthResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
+        # OAuth2 Login Endpoints
+        self.router.add_api_route(
+            "/google-login",
+            endpoint=self.google_login,
+            methods=["GET"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/auth/callback",
+            endpoint=self.auth_callback,
+            name="auth_callback",
+            methods=["GET"],
+            status_code=status.HTTP_200_OK,
+        )
+
+        # Get current user info
         self.router.add_api_route(
             "/me",
             endpoint=self.get_me,
             methods=["get"],
             response_model=UserResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
+        # JoinRequest flow
+        self.router.add_api_route(
+            "/active-approvals",
+            endpoint=self.get_active_approvals,
+            methods=["GET"],
+            response_model=list[ActiveApprovalsResponse],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/create-join-requests",
+            endpoint=self.create_join_request,
+            methods=["POST"],
+            response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
@@ -63,19 +126,8 @@ class UserAPI:
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
-        self.router.add_api_route(
-            "/supervisors",
-            endpoint=self.active_supervisors,
-            methods=["GET"],
-            response_model=list[SupervisorResponse],
-            status_code=status.HTTP_200_OK,
-        )
-        self.router.add_api_route(
-            "/login",
-            endpoint=self.login,
-            methods=["POST"],
-            status_code=status.HTTP_200_OK,
-        )
+
+        # Track user login activity
         self.router.add_api_route(
             "/login-history",
             endpoint=self.get_users_login_history,
@@ -90,9 +142,74 @@ class UserAPI:
             status_code=status.HTTP_200_OK,
         )
 
+    @staticmethod
+    async def set_access_token(
+        user_id: int, request: Request, response: Response, session: DBSession
+    ) -> None:
+
+        max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        access_token, session_id = JWTProvider.create_access_token(user_id)
+
+        login_history = LoginHistory(
+            user_id=user_id,
+            session_id=session_id,
+            ip=request.client.host if request.client else "",
+        )
+
+        session.add(login_history)
+        await session.commit()
+
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,  # True in production with HTTPS
+            samesite="lax",
+            max_age=max_age,
+            expires=max_age,
+            path="/",
+        )
+
+    @staticmethod
+    async def delete_access_token(
+        user_id: int, request: Request, response: Response, session: DBSession
+    ) -> None:
+
+        token = request.cookies.get("access_token")
+
+        if token:
+            payload = JWTProvider.decode_access_token(token)
+            session_id = payload["jti"]
+
+            login_history = await session.scalar(
+                select(LoginHistory).where(
+                    LoginHistory.user_id == user_id,
+                    LoginHistory.session_id == session_id,
+                    LoginHistory.signed_out_at.is_(None),
+                )
+            )
+
+            if login_history:
+                login_history.signed_out_at = datetime.now(UTC)
+                await session.commit()
+
+        # Remove the cookie anyway login_history exists or not
+        response.delete_cookie(
+            key="access_token",
+            path="/",
+            httponly=True,
+            secure=True,  # Match your cookie configuration
+            samesite="lax",
+        )
+
     async def signup(
-        self, payload: SignupRequest, session: DBSession, response: Response
-    ) -> UserResponse:
+        self,
+        request: Request,
+        payload: SignupRequest,
+        session: DBSession,
+        response: Response,
+    ) -> AuthResponse:
+        """Responsible for handling passsword-based user signups"""
         existing_user = await session.scalar(
             select(User).where(
                 or_(User.email == payload.email, User.username == payload.username)
@@ -101,13 +218,7 @@ class UserAPI:
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email or username already registered",
-            )
-
-        if payload.requested_role == UserRole.DEVELOPER and not payload.requested_from:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="The 'requested_from' field is required when requesting the DEVELOPER role.",
+                detail="User with this email or username already exists.",
             )
 
         user = User(
@@ -120,59 +231,183 @@ class UserAPI:
 
         session.add(user)
         await session.flush()
+        await session.commit()
 
-        if payload.requested_from:
-            requested_from_user = await session.scalar(
-                select(User).where(User.id == payload.requested_from)
-            )
-            if not requested_from_user:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="The user you're requesting from not found.",
-                )
+        await self.set_access_token(user.id, request, response, session)
 
-        else:
-            # first fetch Admin user from the database
-            requested_from_user = await session.scalar(
-                select(User).where(User.role == "admin")
-            )
-            if not requested_from_user:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Admin not found.",
-                )
-
-        join_request = JoinRequest(
-            requested_role=payload.requested_role,
-            requested_by=user.id,
-            requested_from=requested_from_user.id,
-            request_note=payload.request_note,
+        return AuthResponse(
+            redirect_url="/create-join-request",
+            message="You're successfully signed-up, please submit a join request to get access to the system.",
         )
 
-        session.add(join_request)
+    async def login(
+        self,
+        payload: LoginRequest,
+        request: Request,
+        response: Response,
+        session: DBSession,
+        limiter: RateLimitBackendDep,
+    ) -> AuthResponse:
+        """Simple Login Flow"""
+
+        address = request.client.host if request.client else ""
+        key = f"login:{payload.email}:{address}"
+
+        WINDOW = 900
+        MAX_ATTEMPTS = 5
+
+        state = await limiter.peek(key, limit=MAX_ATTEMPTS, window=WINDOW)
+
+        if state.remaining == 0:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again later.",
+                headers={"Retry-After": str(max(1, int(state.retry_after)))},
+            )
+
+        user = await session.scalar(
+            select(User)
+            .options(selectinload(User.join_request))
+            .where(User.email == str(payload.email))
+        )
+
+        if (
+            user is None
+            or not user.hashed_password  # this account probably link to google, so only /google-login work for this...
+            or not AuthProvider.check_password(payload.password, user.hashed_password)
+        ):
+            # Count only failed authentication attempts
+            result = await limiter.hit(key, limit=MAX_ATTEMPTS, window=WINDOW)
+
+            if not result.allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed login attempts. Try again later.",
+                    headers={"Retry-After": str(max(1, int(result.retry_after)))},
+                )
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            )
+
+        await limiter.reset(key)
+
+        message = "Login successful"
+
+        join_req = user.join_request
+
+        redirect_url: str | None = None
+
+        if not join_req:
+            redirect_url = "/create-join-request"
+            message = "You're logged in, please submit a join request to get access to the system."
+
+        elif join_req.status == JoinRequestStatus.REJECTED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your access request has been rejected",
+            )
+
+        elif not user.role or join_req.status == JoinRequestStatus.PENDING:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            message = "You're logged in, please wait for access approval."
+
+        session.add(user)
+        await session.flush()
+        await session.commit()
+
+        await self.set_access_token(user.id, request, response, session)
+
+        return AuthResponse(message=message, redirect_url=redirect_url)
+
+    async def google_login(self, request: Request):
+        """
+        Initiate Google OAuth 2.0 authentication.
+
+        Generates the Google OAuth authorization URL and redirects the user
+        to Google's consent screen. After successful authentication, Google
+        redirects the user to the registered auth_callback endpoint.
+        """
+
+        redirect_uri = request.url_for("auth_callback")
+        return await self.google_oauth.authorize_redirect(request, redirect_uri)
+
+    async def _generate_username(self, session: DBSession, email: str) -> str:
+        base = (
+            re.sub(r"[^a-z0-9_]", "", email.split("@")[0].lower())[:90] or "user"
+        )  # keep only first 90 letters
+        candidate, n = base, 0
+        while await session.scalar(select(User.id).where(User.username == candidate)):
+            n += 1
+            candidate = f"{base}{n}"  # update accordingly if already exists
+        return candidate
+
+    async def auth_callback(
+        self, request: Request, session: DBSession
+    ) -> RedirectResponse:
+        """Handler for Google SignUp/SignIn"""
+
+        def to(path: str) -> RedirectResponse:
+            return RedirectResponse(url=path, status_code=status.HTTP_303_SEE_OTHER)
+
+        try:
+            token = await self.google_oauth.authorize_access_token(request)
+        except OAuthError:
+            return to("/signin?error=google_failed")
+
+        user_info = await self.google_oauth.userinfo(token=token)
+
+        if not user_info.get("email_verified"):
+            return to("/signin?error=google_unverified")
+
+        email = user_info["email"]
+
+        existing_user = await session.scalar(
+            select(User)
+            .options(selectinload(User.join_request))
+            .where(User.email == email)
+        )
+
+        if existing_user:
+            if existing_user.google_id and existing_user.google_id != user_info["sub"]:
+                return to("/signin?error=google_failed")
+
+            join_req = existing_user.join_request
+            if join_req and join_req.status == JoinRequestStatus.REJECTED:
+                return to("/signin?error=access_rejected")
+
+            existing_user.google_id = user_info["sub"]
+            user = existing_user
+        else:
+            # First-time Google signup: account only, the role is requested afterwards.
+            user = User(
+                google_id=user_info["sub"],
+                first_name=user_info.get("given_name", ""),
+                last_name=user_info.get("family_name", ""),
+                username=await self._generate_username(session, email),
+                email=email,
+            )
+            session.add(user)
+            await session.flush()
 
         await session.commit()
-        await session.refresh(user)
 
-        # Sent email notification to the requested_from user if the role is developer
-        await self.email_manager.send_join_request_notification(
-            to_email=requested_from_user.email,
-            approver_username=requested_from_user.username,
-            requester_username=user.username,
-            requester_name=f"{user.first_name} {user.last_name}",
-            requester_email=user.email,
-            requested_role=join_request.requested_role.value,
-            requested_at=join_request.created_at,
-        )
+        if not user.role:
+            target = "/create-join-request"
+        elif user.role == UserRole.DEVELOPER:
+            target = "/devices"
+        else:
+            target = "/dashboard"
 
-        access_token = JWTProvider.create_access_token(user.id)
-        max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        response.set_cookie(
-            key="access_token",
-            value=f"Bearer {access_token}",
-            max_age=max_age,
-            expires=max_age,
-        )
+        redirect = to(target)
+
+        await self.set_access_token(
+            user.id, request, redirect, session
+        )  # settng cookie on the redirect response
+        return redirect
+
+    async def get_me(self, user: GetCurrentUser) -> UserResponse:
 
         return UserResponse(
             id=user.id,
@@ -183,15 +418,111 @@ class UserAPI:
             email=user.email,
         )
 
-    async def active_supervisors(self, session: DBSession) -> list[SupervisorResponse]:
+    async def get_active_approvals(
+        self, _: GetCurrentUser, session: DBSession
+    ) -> list[ActiveApprovalsResponse]:
+
         result = await session.execute(
-            select(User.id, User.username).where(User.role == UserRole.SUPERVISOR)
+            select(User.id, User.username, User.role).where(
+                User.role != UserRole.DEVELOPER
+            )
         )
-        supervisors = result.all()
+        approvals = result.all()
         return [
-            SupervisorResponse(id=supervisor.id, username=supervisor.username)
-            for supervisor in supervisors
+            ActiveApprovalsResponse(
+                id=approval.id, username=approval.username, role=approval.role
+            )
+            for approval in approvals
         ]
+
+    async def create_join_request(
+        self,
+        payload: CreateJoinReqRequest,
+        user: GetCurrentUser,
+        session: DBSession,
+        response: Response,
+    ) -> StatusResponse:
+        if payload.requested_role == UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Admin role cannot be requested.",
+            )
+
+        if user.role:
+            response.status_code = status.HTTP_409_CONFLICT
+            return StatusResponse(message="You already have an assigned role.")
+
+        # Prevent duplicate join requests
+        existing_join_request = await session.scalar(
+            select(JoinRequest).where(JoinRequest.requested_by == user.id)
+        )
+
+        if existing_join_request:
+            if existing_join_request.status == JoinRequestStatus.REJECTED:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your access request has been rejected",
+                )
+
+            if existing_join_request.status == JoinRequestStatus.PENDING:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="You already have a join request submitted.",
+                )
+
+        if payload.requested_role == UserRole.DEVELOPER:
+            required_role = UserRole.SUPERVISOR
+            approver_name = "supervisor"
+
+        elif payload.requested_role == UserRole.SUPERVISOR:
+            required_role = UserRole.ADMIN
+            approver_name = "admin"
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role requested.",
+            )
+
+        requested_from_user = await session.scalar(
+            select(User).where(
+                User.id == payload.requested_from,
+                User.role == required_role,
+            )
+        )
+
+        if not requested_from_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"The selected {approver_name} was not found or is not eligible to receive this request.",
+            )
+
+        join_request = JoinRequest(
+            requested_role=payload.requested_role,
+            requested_by=user.id,
+            requested_from=requested_from_user.id,
+            request_note=payload.request_note,
+        )
+
+        session.add(join_request)
+        await session.commit()
+        await session.refresh(join_request)
+
+        await self.email_manager.send_join_request_notification(
+            to_email=requested_from_user.email,
+            approver_username=requested_from_user.username,
+            requester_username=user.username,
+            requester_name=f"{user.first_name} {user.last_name}",
+            requester_email=user.email,
+            requested_role=join_request.requested_role.value,
+            requested_at=join_request.created_at,
+        )
+
+        return StatusResponse(
+            message=(
+                "Your join request has been submitted successfully. You will be notified once it has been reviewed."
+            )
+        )
 
     async def get_join_requests(
         self, user: GetCurrentUser, session: DBSession, response: Response
@@ -247,30 +578,34 @@ class UserAPI:
         reason: Annotated[str | None, Query()] = None,
     ) -> StatusResponse:
 
+        if user.role not in (UserRole.ADMIN, UserRole.SUPERVISOR):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized."
+            )
+
+        # ? Can admin process any request?
+
         join_request = await session.scalar(
             select(JoinRequest)
             .options(
                 selectinload(JoinRequest.requester),
                 selectinload(JoinRequest.requested_from_user),
             )
-            .where(JoinRequest.id == join_request_id)
+            .where(
+                JoinRequest.id == join_request_id,
+                JoinRequest.requested_from == user.id,
+            )
         )
 
         if not join_request:
-            response.status_code = status.HTTP_404_NOT_FOUND
+            response.status_code = status.HTTP_403_FORBIDDEN
             return StatusResponse(
-                message="Request not found, please try again.",
+                message="Request might not be found or you are not authorized to manage this request.",
             )
 
         if join_request.requested_role == UserRole.ADMIN:
             response.status_code = status.HTTP_403_FORBIDDEN
             return StatusResponse(message="Invalid requested role.")
-
-        if join_request.requested_from != user.id:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(
-                message="You are not authorized to manage this request.",
-            )
 
         if join_request.status != JoinRequestStatus.PENDING:
             return StatusResponse(
@@ -318,9 +653,7 @@ class UserAPI:
         return StatusResponse(message="Success!")
 
     async def get_users_login_history(
-        self,
-        user: GetCurrentUser,
-        session: DBSession,
+        self, user: GetCurrentUser, session: DBSession
     ) -> list[LoginHistoryResponse]:
 
         history: list[LoginHistoryResponse] = []
@@ -344,122 +677,20 @@ class UserAPI:
                     ip=record.ip,
                     role=record.user.role,
                     logged_in_at=record.signed_in_at,
+                    logged_out_at=record.signed_out_at,
                 )
             )
 
         return history
 
-    async def login(
+    async def logout(
         self,
-        payload: LoginRequest,
+        user: GetCurrentUser,
         request: Request,
         response: Response,
         session: DBSession,
-        limiter: RateLimitBackendDep,
-    ) -> dict[str, str]:
+    ) -> StatusResponse:
 
-        address = request.client.host if request.client else ""
-        key = f"login:{payload.email}:{address}"
-
-        WINDOW = 900
-        MAX_ATTEMPTS = 5
-
-        state = await limiter.peek(key, limit=MAX_ATTEMPTS, window=WINDOW)
-
-        if state.remaining == 0:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many failed login attempts. Try again later.",
-                headers={"Retry-After": str(max(1, int(state.retry_after)))},
-            )
-
-        user = await session.scalar(
-            select(User)
-            .options(selectinload(User.join_requests))
-            .where(User.email == str(payload.email))
-        )
-
-        if user is None or not AuthProvider.check_password(
-            payload.password, user.hashed_password
-        ):
-            # Count only failed authentication attempts
-            result = await limiter.hit(key, limit=MAX_ATTEMPTS, window=WINDOW)
-
-            if not result.allowed:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many failed login attempts. Try again later.",
-                    headers={"Retry-After": str(max(1, int(result.retry_after)))},
-                )
-
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password.",
-            )
-
-        await limiter.reset(key)
-
-        if user.role == None:
-            join_req = user.join_requests
-            if join_req.status == JoinRequestStatus.REJECTED:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Your access request was rejected.",
-                )
-
-            if join_req.status == JoinRequestStatus.PENDING:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Your access request is still pending.",
-                )
-
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account has no assigned role.",
-            )
-
-        login_history_record = LoginHistory(
-            user_id=user.id,
-            ip=address,
-        )
-
-        session.add(login_history_record)
-        await session.commit()
-
-        max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        access_token = JWTProvider.create_access_token(user.id)
-
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,  # True in production with HTTPS
-            samesite="lax",
-            max_age=max_age,
-            expires=max_age,
-            path="/",
-        )
-
-        return {"message": "Login successful"}
-
-    async def get_me(self, user: GetCurrentUser) -> UserResponse:
-
-        return UserResponse(
-            id=user.id,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            username=user.username,
-            role=user.role,
-            email=user.email,
-        )
-
-    async def logout(self, response: Response):
-        response.delete_cookie(
-            key="access_token",
-            path="/",
-            httponly=True,
-            secure=True,  # Match your cookie configuration
-            samesite="lax",
-        )
+        await self.delete_access_token(user.id, request, response, session)
 
         return StatusResponse(message="Successfully logged out.")

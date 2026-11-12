@@ -1,5 +1,24 @@
 const API_BASE_URL = "/api/v1";
+
 const DASHBOARD_URL = "/dashboard";
+const JOIN_REQUEST_URL = "/create-join-request";
+
+// Where an already signed-in user belongs. No role yet means they still have to ask for one.
+function homeFor(role) {
+    const value = String(role || "").toLowerCase();
+
+    if (value === "developer") return "/devices";
+    if (value === "admin" || value === "supervisor") return DASHBOARD_URL;
+
+    return JOIN_REQUEST_URL;
+}
+
+// Error codes the backend can attach to a redirect, e.g. /signin?error=google_failed
+const URL_ERRORS = {
+    access_rejected: "Your access request has been rejected.",
+    google_failed: "Google sign-in failed. Please try again.",
+    google_unverified: "Your Google email isn't verified, so it can't be used to sign in.",
+};
 
 // All API requests that use authentication cookies go through this.
 async function apiRequest(endpoint, options = {}) {
@@ -32,14 +51,15 @@ function getErrorMessage(data) {
     return data?.message || "Something went wrong. Please try again.";
 }
 
-// Already signed in? Skip the form and go straight to the dashboard.
+// Already signed in? Skip the form and go straight to where the user belongs.
 // A failed check (network error, server down) simply shows the form.
 async function redirectIfAuthenticated() {
     try {
         const response = await apiRequest("/user/me");
 
         if (response.ok) {
-            window.location.replace(DASHBOARD_URL);
+            const user = await response.json();
+            window.location.replace(homeFor(user.role));
             return true;
         }
     } catch (error) {
@@ -47,6 +67,14 @@ async function redirectIfAuthenticated() {
     }
 
     return false;
+}
+
+function showUrlError() {
+    const code = new URLSearchParams(window.location.search).get("error");
+
+    if (code && URL_ERRORS[code]) {
+        showMessage(URL_ERRORS[code]);
+    }
 }
 
 function setupPasswordToggle() {
@@ -61,7 +89,7 @@ function setupPasswordToggle() {
     });
 }
 
-// Sends the request and, on success, goes straight to the dashboard.
+// Sends the request and follows the server's redirect_url.
 // The cookie is already set by the response, so no extra /me call is needed.
 async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel, successMessage }) {
     button.disabled = true;
@@ -78,13 +106,20 @@ async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel,
 
         const data = await response.json().catch(() => ({}));
 
-        if (!response.ok) {
+        // Signed in, but access isn't approved yet: the API answers 403 with a
+        // message (no "detail") and still sets the cookie.
+        const awaitingApproval = response.status === 403 && data?.message && !data?.detail;
+
+        if (!response.ok && !awaitingApproval) {
             throw new Error(getErrorMessage(data));
         }
 
         redirecting = true;
-        showMessage(successMessage, "success");
-        window.location.replace(DASHBOARD_URL);
+        showMessage(data.message || successMessage, "success");
+
+        window.location.replace(
+            data.redirect_url || (awaitingApproval ? JOIN_REQUEST_URL : DASHBOARD_URL)
+        );
 
     } catch (error) {
         showMessage(
@@ -118,75 +153,11 @@ function handleLogin(event) {
     });
 }
 
-// Load supervisors for developer signup.
-async function loadSupervisors() {
-    const select = document.getElementById("requestedFrom");
-
-    if (!select) return;
-
-    try {
-        const response = await apiRequest("/user/supervisors");
-
-        if (!response.ok) {
-            throw new Error("Unable to load supervisors.");
-        }
-
-        const data = await response.json();
-
-        const supervisors = Array.isArray(data)
-            ? data
-            : data.supervisors || data.items || [];
-
-        select.innerHTML = '<option value="">Select a supervisor</option>';
-
-        supervisors.forEach(supervisor => {
-            const option = document.createElement("option");
-
-            option.value = supervisor.id;
-            option.textContent =
-                `${supervisor.first_name} ${supervisor.last_name} (@${supervisor.username})`;
-
-            select.appendChild(option);
-        });
-
-    } catch (error) {
-        console.error(error);
-        showMessage("Unable to load supervisors. Please try again.");
-    }
-}
-
-// Signup: show supervisor picker for developers, and reflect the chosen role
-// in the page title badge.
-function setupRoleSelection() {
-    const roleSelect = document.getElementById("requestedRole");
-    const supervisorGroup = document.getElementById("supervisorGroup");
-    const supervisorSelect = document.getElementById("requestedFrom");
-    const badge = document.getElementById("roleBadge");
-
-    if (!roleSelect) return;
-
-    function updateRoleFields() {
-        const role = roleSelect.value;
-        const isDeveloper = role === "developer";
-
-        supervisorGroup.classList.toggle("hidden", !isDeveloper);
-        supervisorSelect.required = isDeveloper;
-
-        if (badge) {
-            badge.textContent = role;
-            badge.className = `role-badge ${role}`;
-        }
-    }
-
-    roleSelect.addEventListener("change", updateRoleFields);
-    updateRoleFields();
-}
-
+// Signup only creates the account. The role is requested afterwards on /create-join-request.
 function handleSignup(event) {
     event.preventDefault();
 
     const form = event.currentTarget;
-    const role = form.requestedRole.value;
 
     submitAuthForm({
         endpoint: "/user/signup",
@@ -196,11 +167,6 @@ function handleSignup(event) {
             username: form.username.value.trim(),
             email: form.email.value.trim(),
             password: form.password.value,
-            requested_role: role,
-            requested_from: role === "developer"
-                ? Number(form.requestedFrom.value)
-                : null,
-            request_note: form.requestNote.value.trim() || null,
         },
         button: document.getElementById("submitButton"),
         busyLabel: "Creating account...",
@@ -219,10 +185,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (await redirectIfAuthenticated()) return;
 
-    if (page === "signup") {
-        setupRoleSelection();
-        await loadSupervisors();
+    showUrlError();
 
+    if (page === "signup") {
         document.getElementById("signupForm")
             .addEventListener("submit", handleSignup);
     }

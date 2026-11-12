@@ -26,10 +26,11 @@ class SignupRequest(BaseModel):
     first_name: str = Field(min_length=3, max_length=100)
     last_name: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8)
+
+
+class CreateJoinReqRequest(BaseModel):
     requested_role: UserRole = Field(default=UserRole.DEVELOPER)
-    requested_from: int | None = Field(
-        default=None
-    )  # only for developer role, this is the supervisor id
+    requested_from: int
     request_note: str | None = Field(default=None)
 
 
@@ -47,9 +48,15 @@ class UserResponse(BaseModel):
     email: EmailStr
 
 
-class SupervisorResponse(BaseModel):
+class AuthResponse(BaseModel):
+    message: str
+    redirect_url: str | None = None
+
+
+class ActiveApprovalsResponse(BaseModel):
     id: int
     username: str
+    role: UserRole
 
 
 class LoginHistoryResponse(BaseModel):
@@ -57,6 +64,7 @@ class LoginHistoryResponse(BaseModel):
     ip: str | None = None
     role: UserRole | None = None
     logged_in_at: datetime
+    logged_out_at: datetime | None = None
 
 
 class JoinRequestsResponse(BaseModel):

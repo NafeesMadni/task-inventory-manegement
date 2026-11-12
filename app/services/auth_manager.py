@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import bcrypt
 import jwt
@@ -31,13 +32,15 @@ class AuthProvider:
 
 class JWTProvider:
     @staticmethod
-    def create_access_token(user_id: int) -> str:
+    def create_access_token(user_id: int) -> tuple[str, str]:
+        session_id = str(uuid4())
         expires_at = datetime.now(UTC) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
         payload = {
             "sub": str(user_id),
+            "jti": session_id,
             "exp": expires_at,
         }
 
@@ -45,17 +48,16 @@ class JWTProvider:
             payload=payload,
             key=settings.JWT_SECRET_KEY,
             algorithm=settings.ALGORITHM,
-        )
+        ), session_id
 
     @staticmethod
     def decode_access_token(token: str) -> dict:
         try:
-            decoded = jwt.decode(
+            return jwt.decode(
                 jwt=token,
                 key=settings.JWT_SECRET_KEY,
                 algorithms=[settings.ALGORITHM],
             )
-            return decoded
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

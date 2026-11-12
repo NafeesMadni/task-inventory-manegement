@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Access | Device Portal</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+
+<body>
+
+    <header class="site-header" id="site-header"></header>
+
+    <main class="container">
+        <div class="page-note" id="page-message">Loading...</div>
+
+        <div class="auth-card wide centered hidden" id="card">
+            <p class="eyebrow">One more step</p>
+            <h1>Request access <span class="role-badge developer" id="role-badge">developer</span></h1>
+            <p class="description" id="intro"></p>
+
+            <!-- Form -->
+            <form id="join-form" novalidate>
+                <div class="form-group">
+                    <label for="requested-role">Role you're requesting</label>
+                    <select id="requested-role" name="requested_role" required>
+                        <option value="developer">Developer</option>
+                        <option value="supervisor">Supervisor</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="requested-from" id="approver-label">Your supervisor</label>
+                    <select id="requested-from" name="requested_from" required>
+                        <option value="">Loading...</option>
+                    </select>
+                    <span class="field-help" id="approver-help">Pick the supervisor who should approve your
+                        access.</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="request-note">Note (optional)</label>
+                    <textarea id="request-note" name="request_note"
+                        placeholder="Add a short note about your access request..."></textarea>
+                </div>
+
+                <div id="message" class="message" role="alert"></div>
+
+                <button type="submit" class="submit-button" id="submit-btn">Send request</button>
+            </form>
+
+            <!-- Pending -->
+            <div class="state hidden" id="state-pending">
+                <div class="state-icon">&#10003;</div>
+                <h2>Request submitted</h2>
+                <p class="description" id="pending-text"></p>
+            </div>
+
+            <!-- Duplicate: a request already exists -->
+            <div class="state hidden" id="state-duplicate">
+                <div class="state-icon warn">!</div>
+                <h2>Request already submitted</h2>
+                <p class="description">
+                    You can't create a duplicate request. Your current request is still waiting for review,
+                    and you'll get an email once it has been processed.
+                </p>
+            </div>
+
+            <!-- Rejected -->
+            <div class="state hidden" id="state-rejected">
+                <div class="state-icon bad">&times;</div>
+                <h2>Request rejected</h2>
+                <p class="description">Your access request was rejected. Please contact an administrator if you think
+                    this is a mistake.</p>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/shell.js"></script>
+    <script>
+        const { $, api, escapeHTML, errorMessage } = Portal;
+
+        // Developers are approved by a supervisor, supervisors by an admin.
+        const APPROVER = {
+            developer: { role: "supervisor", label: "Your supervisor", help: "Pick the supervisor who should approve your access." },
+            supervisor: { role: "admin", label: "Approving admin", help: "Pick the admin who should approve your access." },
+        };
+
+        let approvers = [];
+
+        function homeFor(role) {
+            if (role === "developer") return "/devices";
+            return "/dashboard";
+        }
+
+        function showState(name) {
+            $("join-form").classList.toggle("hidden", name !== "form");
+            $("state-pending").classList.toggle("hidden", name !== "pending");
+            $("state-duplicate").classList.toggle("hidden", name !== "duplicate");
+            $("state-rejected").classList.toggle("hidden", name !== "rejected");
+
+            // The role badge only makes sense while choosing a role.
+            $("role-badge").classList.toggle("hidden", name !== "form");
+        }
+
+        function showError(text) {
+            const box = $("message");
+            box.textContent = text;
+            box.className = "message show error";
+        }
+
+        function showPending(text) {
+            $("pending-text").textContent = text;
+            showState("pending");
+        }
+
+        /* ---------- Init ---------- */
+
+        async function init() {
+            try {
+                const session = await Portal.start({ title: "Request access" });
+                if (!session) return; // sent to /signin
+
+                const { user, role } = session;
+
+                // Already approved: nothing to request, go where this user belongs.
+                if (role !== "pending") {
+                    window.location.replace(homeFor(role));
+                    return;
+                }
+
+                $("page-message").classList.add("hidden");
+                $("card").classList.remove("hidden");
+                $("intro").textContent =
+                    `Hi ${user.first_name || "there"}, tell us which role you need and who should approve it.`;
+
+                // Optional: shown instantly if /me includes the status of an existing join request.
+                const existing = String(user.join_request_status || "").toLowerCase();
+                if (existing.includes("pend")) {
+                    showState("duplicate");
+                    return;
+                }
+                if (existing.includes("reject")) {
+                    showState("rejected");
+                    return;
+                }
+
+                $("requested-role").addEventListener("change", renderApprovers);
+                $("join-form").addEventListener("submit", submit);
+
+                await loadApprovers();
+
+            } catch (error) {
+                $("page-message").classList.remove("hidden");
+                $("page-message").textContent = error.message;
+                $("page-message").classList.add("error");
+            }
+        }
+
+        async function loadApprovers() {
+            try {
+                const response = await api("/user/active-approvals");
+                if (!response) return;
+                if (!response.ok) throw new Error("Unable to load approvers.");
+
+                approvers = await response.json();
+                renderApprovers();
+
+            } catch (error) {
+                $("requested-from").innerHTML = `<option value="">Unavailable</option>`;
+                showError(error.message);
+            }
+        }
+
+        function renderApprovers() {
+            const requested = $("requested-role").value;
+            const info = APPROVER[requested];
+
+            $("approver-label").textContent = info.label;
+            $("approver-help").textContent = info.help;
+
+            const badge = $("role-badge");
+            badge.textContent = requested;
+            badge.className = `role-badge ${requested}`;
+
+            const eligible = approvers.filter(a => String(a.role || "").toLowerCase() === info.role);
+
+            $("requested-from").innerHTML = eligible.length
+                ? `<option value="">Select a ${info.role}</option>` +
+                eligible.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.username)}</option>`).join("")
+                : `<option value="">No ${info.role}s available</option>`;
+        }
+
+        /* ---------- Submit ---------- */
+
+        async function submit(event) {
+            event.preventDefault();
+            $("message").className = "message";
+
+            const requested = $("requested-role").value;
+            const approverId = Number($("requested-from").value);
+
+            if (!approverId) {
+                showError(`Please select the ${APPROVER[requested].role} who should approve your request.`);
+                return;
+            }
+
+            const button = $("submit-btn");
+            button.disabled = true;
+            button.textContent = "Sending...";
+
+            try {
+                const response = await api("/user/create-join-requests", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        requested_role: requested,
+                        requested_from: approverId,
+                        request_note: $("request-note").value.trim() || null,
+                    }),
+                });
+                if (!response) return;
+
+                const result = await response.json().catch(() => ({}));
+                const message = errorMessage(result, response.status);
+
+                if (response.ok) {
+                    showPending(message);
+                    return;
+                }
+
+                // These come back as errors from the API, but they're states, not failures.
+                if (response.status === 409 && /already have a join request/i.test(message)) {
+                    showState("duplicate");
+                    return;
+                }
+                if (response.status === 403 && /rejected/i.test(message)) {
+                    showState("rejected");
+                    return;
+                }
+                if (response.status === 409 && /assigned role/i.test(message)) {
+                    window.location.replace("/dashboard");
+                    return;
+                }
+
+                throw new Error(message);
+
+            } catch (error) {
+                showError(error instanceof TypeError ? "Unable to connect to the server." : error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = "Send request";
+            }
+        }
+
+        init();
+    </script>
+
+</body>
+
+</html>

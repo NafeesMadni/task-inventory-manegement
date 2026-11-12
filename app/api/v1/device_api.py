@@ -595,7 +595,7 @@ class DeviceAPI:
                 device_name=devices_request_record.device.name
                 if devices_request_record.device
                 else None,
-                device_serial=devices_request_record.serial_no
+                device_serial=devices_request_record.device.serial_no
                 if devices_request_record.device
                 else None,
                 requested_specs=devices_request_record.requested_specs,
