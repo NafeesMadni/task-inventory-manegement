@@ -87,6 +87,7 @@ class UserAPI:
             methods=["GET"],
             status_code=status.HTTP_200_OK,
         )
+
         # Get current user info
         self.router.add_api_route(
             "/me",
@@ -95,6 +96,7 @@ class UserAPI:
             response_model=UserResponse,
             status_code=status.HTTP_200_OK,
         )
+
         # JoinRequest flow
         self.router.add_api_route(
             "/active-approvals",
@@ -125,6 +127,7 @@ class UserAPI:
             status_code=status.HTTP_200_OK,
         )
 
+        # Track user login activity
         self.router.add_api_route(
             "/login-history",
             endpoint=self.get_users_login_history,
@@ -139,9 +142,22 @@ class UserAPI:
             status_code=status.HTTP_200_OK,
         )
 
-    def _set_access_token(self, user_id: int, response: Response) -> None:
-        max_age = self.settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        access_token = JWTProvider.create_access_token(user_id)
+    @staticmethod
+    async def set_access_token(
+        user_id: int, request: Request, response: Response, session: DBSession
+    ) -> None:
+
+        max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        access_token, session_id = JWTProvider.create_access_token(user_id)
+
+        login_history = LoginHistory(
+            user_id=user_id,
+            session_id=session_id,
+            ip=request.client.host if request.client else "",
+        )
+
+        session.add(login_history)
+        await session.commit()
 
         response.set_cookie(
             key="access_token",
@@ -152,6 +168,38 @@ class UserAPI:
             max_age=max_age,
             expires=max_age,
             path="/",
+        )
+
+    @staticmethod
+    async def delete_access_token(
+        user_id: int, request: Request, response: Response, session: DBSession
+    ) -> None:
+
+        token = request.cookies.get("access_token")
+
+        if token:
+            payload = JWTProvider.decode_access_token(token)
+            session_id = payload["jti"]
+
+            login_history = await session.scalar(
+                select(LoginHistory).where(
+                    LoginHistory.user_id == user_id,
+                    LoginHistory.session_id == session_id,
+                    LoginHistory.signed_out_at.is_(None),
+                )
+            )
+
+            if login_history:
+                login_history.signed_out_at = datetime.now(UTC)
+                await session.commit()
+
+        # Remove the cookie anyway login_history exists or not
+        response.delete_cookie(
+            key="access_token",
+            path="/",
+            httponly=True,
+            secure=True,  # Match your cookie configuration
+            samesite="lax",
         )
 
     async def signup(
@@ -183,16 +231,9 @@ class UserAPI:
 
         session.add(user)
         await session.flush()
-
-        login_history_record = LoginHistory(
-            user_id=user.id,
-            ip=request.client.host if request.client else "",
-        )
-
-        session.add(login_history_record)
         await session.commit()
 
-        self._set_access_token(user.id, response)
+        await self.set_access_token(user.id, request, response, session)
 
         return AuthResponse(
             redirect_url="/create-join-request",
@@ -272,15 +313,11 @@ class UserAPI:
             response.status_code = status.HTTP_403_FORBIDDEN
             message = "You're logged in, please wait for access approval."
 
-        login_history_record = LoginHistory(
-            user_id=user.id,
-            ip=address,
-        )
-
-        session.add(login_history_record)
+        session.add(user)
+        await session.flush()
         await session.commit()
 
-        self._set_access_token(user.id, response)
+        await self.set_access_token(user.id, request, response, session)
 
         return AuthResponse(message=message, redirect_url=redirect_url)
 
@@ -353,10 +390,7 @@ class UserAPI:
             )
             session.add(user)
             await session.flush()
-        login_history = LoginHistory(
-            user_id=user.id, ip=request.client.host if request.client else ""
-        )
-        session.add(login_history)
+
         await session.commit()
 
         if not user.role:
@@ -367,8 +401,9 @@ class UserAPI:
             target = "/dashboard"
 
         redirect = to(target)
-        self._set_access_token(
-            user.id, redirect
+
+        await self.set_access_token(
+            user.id, request, redirect, session
         )  # settng cookie on the redirect response
         return redirect
 
@@ -618,9 +653,7 @@ class UserAPI:
         return StatusResponse(message="Success!")
 
     async def get_users_login_history(
-        self,
-        user: GetCurrentUser,
-        session: DBSession,
+        self, user: GetCurrentUser, session: DBSession
     ) -> list[LoginHistoryResponse]:
 
         history: list[LoginHistoryResponse] = []
@@ -644,18 +677,20 @@ class UserAPI:
                     ip=record.ip,
                     role=record.user.role,
                     logged_in_at=record.signed_in_at,
+                    logged_out_at=record.signed_out_at,
                 )
             )
 
         return history
 
-    async def logout(self, response: Response):
-        response.delete_cookie(
-            key="access_token",
-            path="/",
-            httponly=True,
-            secure=True,  # Match your cookie configuration
-            samesite="lax",
-        )
+    async def logout(
+        self,
+        user: GetCurrentUser,
+        request: Request,
+        response: Response,
+        session: DBSession,
+    ) -> StatusResponse:
+
+        await self.delete_access_token(user.id, request, response, session)
 
         return StatusResponse(message="Successfully logged out.")

@@ -99,6 +99,10 @@
                     <h2 id="h-ips">0</h2>
                 </div>
                 <div class="stat-card">
+                    <p>Active sessions</p>
+                    <h2 id="h-active">0</h2>
+                </div>
+                <div class="stat-card">
                     <p>Latest login</p>
                     <h2 id="h-latest">-</h2>
                 </div>
@@ -115,6 +119,16 @@
                         <label for="filter-role">Role</label>
                         <select id="filter-role">
                             <option value="">All roles</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="filter-session">Session</label>
+                        <select id="filter-session">
+                            <option value="">All sessions</option>
+                            <option value="active">Active</option>
+                            <option value="ended">Signed out</option>
+                            <option value="expired">No sign-out</option>
                         </select>
                     </div>
 
@@ -158,6 +172,10 @@
         let loginHistory = [];
         let statusFilter = "all";
         const loaded = {};
+
+        // A login with no sign-out time counts as "active" only while its session could still be valid.
+        // Keep this in sync with ACCESS_TOKEN_EXPIRE_MINUTES on the backend.
+        const SESSION_MAX_HOURS = 24;
 
         /* Each route: title, who can see it, how to load it. */
         const ROUTES = [
@@ -288,6 +306,7 @@
             /* Login history */
             $("filter-search").addEventListener("input", applyHistoryFilters);
             $("filter-role").addEventListener("change", applyHistoryFilters);
+            $("filter-session").addEventListener("change", applyHistoryFilters);
 
             ["filter-from", "filter-to"].forEach(id =>
                 $(id).addEventListener("change", () => {
@@ -323,7 +342,7 @@
             });
 
             $("clear-filters").addEventListener("click", () => {
-                ["filter-search", "filter-role", "filter-from", "filter-to"].forEach(id => $(id).value = "");
+                ["filter-search", "filter-role", "filter-session", "filter-from", "filter-to"].forEach(id => $(id).value = "");
                 setActiveRange(document.querySelector('#range-filter [data-days=""]'));
                 applyHistoryFilters();
             });
@@ -466,7 +485,11 @@
                 if (!response.ok) throw new Error("Unable to load login history.");
 
                 loginHistory = (await response.json())
-                    .map(record => ({ ...record, _date: new Date(record.logged_in_at) }))
+                    .map(record => ({
+                        ...record,
+                        _date: new Date(record.logged_in_at),
+                        _out: record.logged_out_at ? new Date(record.logged_out_at) : null,
+                    }))
                     .sort((a, b) => b._date - a._date);
 
                 flagNewIps();
@@ -476,6 +499,50 @@
             } catch (error) {
                 $("history-list").innerHTML = `<div class="empty error">${escapeHTML(error.message)}</div>`;
             }
+        }
+
+        // "ended"   = signed out (logged_out_at is set)
+        // "active"  = no sign-out yet and the login is recent enough for the session to still be valid
+        // "expired" = no sign-out recorded, but the session is too old to still be open
+        function sessionState(record) {
+            if (record._out && !Number.isNaN(record._out.getTime())) return "ended";
+
+            const ageHours = (Date.now() - record._date.getTime()) / 3600000;
+            return ageHours <= SESSION_MAX_HOURS ? "active" : "expired";
+        }
+
+        function formatDuration(ms) {
+            const minutes = Math.round(ms / 60000);
+
+            if (minutes < 1) return "under a minute";
+            if (minutes < 60) return `${minutes}m`;
+
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ${minutes % 60}m`;
+
+            return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+        }
+
+        // Pill plus an optional detail line for one login row.
+        function sessionHTML(record) {
+            const state = sessionState(record);
+
+            if (state === "active") {
+                return `<span class="session-pill active" title="No sign-out recorded yet">Active</span>`;
+            }
+
+            if (state === "ended") {
+                const sameDay = record._out.toDateString() === record._date.toDateString();
+                const outTime = record._out.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                const when = sameDay
+                    ? outTime
+                    : `${record._out.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${outTime}`;
+
+                return `<span class="session-pill ended">Signed out</span>
+                        <span class="log-session">${escapeHTML(when)} · ${formatDuration(record._out - record._date)}</span>`;
+            }
+
+            return `<span class="session-pill ended" title="The session is too old to still be open">No sign-out</span>`;
         }
 
         // Marks a login when the user signs in from an IP not seen earlier in their history.
@@ -521,6 +588,7 @@
         function applyHistoryFilters() {
             const search = $("filter-search").value.trim().toLowerCase();
             const roleFilter = $("filter-role").value;
+            const sessionFilter = $("filter-session").value;
             const from = $("filter-from").value;
             const to = $("filter-to").value;
 
@@ -530,6 +598,7 @@
             const filtered = loginHistory.filter(record => {
                 if (search && !`${record.username ?? ""} ${record.ip ?? ""}`.toLowerCase().includes(search)) return false;
                 if (roleFilter && String(record.role) !== roleFilter) return false;
+                if (sessionFilter && sessionState(record) !== sessionFilter) return false;
 
                 if (fromDate || toDate) {
                     if (Number.isNaN(record._date.getTime())) return false;
@@ -547,6 +616,7 @@
             $("h-total").textContent = records.length;
             $("h-users").textContent = new Set(records.map(r => r.username)).size;
             $("h-ips").textContent = new Set(records.map(r => r.ip)).size;
+            $("h-active").textContent = records.filter(r => sessionState(r) === "active").length;
             $("h-latest").textContent =
                 records.length ? (timeAgo(records[0]._date) || records[0]._date.toLocaleDateString()) : "-";
 
@@ -587,6 +657,7 @@
                             ${record._newIp
                             ? `<span class="tag-new" title="First time this user appears from this IP in the loaded history">New IP</span>`
                             : ""}
+                            ${sessionHTML(record)}
                         </div>
 
                         <button class="chip" data-filter="${escapeHTML(record.ip || "")}"

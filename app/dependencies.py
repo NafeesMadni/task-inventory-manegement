@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.db import get_sessionmaker
-from app.database.models import User, get_user_loading_options
+from app.database.models import LoginHistory, User, get_user_loading_options
 from app.services import JWTProvider
 
 
@@ -32,7 +32,38 @@ async def get_current_user(
         )
 
     payload = JWTProvider.decode_access_token(token)
-    user_id = int(payload["sub"])
+
+    try:
+        user_id = int(payload["sub"])
+        session_id = payload["jti"]
+    except KeyError, TypeError, ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
+        )
+
+    login_history = await session.scalar(
+        select(LoginHistory).where(
+            LoginHistory.user_id == user_id,
+            LoginHistory.session_id == session_id,
+            LoginHistory.signed_out_at.is_(None),
+        )
+    )
+
+    if not login_history:
+        # Delete the already expired or revoked cookie
+        response.delete_cookie(
+            key="access_token",
+            path="/",
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or revoked, please login again.",
+        )
 
     role = await session.scalar(select(User.role).where(User.id == user_id))
 

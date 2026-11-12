@@ -64,6 +64,7 @@ class LoginHistoryResponse(BaseModel):
     ip: str | None = None
     role: UserRole | None = None
     logged_in_at: datetime
+    logged_out_at: datetime | None = None
 
 
 class JoinRequestsResponse(BaseModel):

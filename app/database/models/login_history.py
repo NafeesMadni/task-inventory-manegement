@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.models.base import Base
@@ -18,21 +18,21 @@ class LoginHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+
+    # Unique identifier for this authentication session/token
+    session_id: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
 
     signed_in_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    ip: Mapped[str | None] = mapped_column(
-        String(45),
-        nullable=True,
+    signed_out_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
+
+    ip: Mapped[str | None] = mapped_column(nullable=True)
 
     # Relationships
     user: Mapped[User] = relationship(
