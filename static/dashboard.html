@@ -152,6 +152,8 @@
                         <button data-days="7">7 days</button>
                         <button data-days="30">30 days</button>
                     </div>
+                    <button class="btn btn-sm" id="expand-all">Expand all</button>
+                    <button class="btn btn-sm" id="collapse-all">Collapse all</button>
                     <span class="count" id="history-count">0 records</span>
                 </div>
 
@@ -335,11 +337,30 @@
 
             // Clicking a username or IP in the timeline filters by it.
             $("history-list").addEventListener("click", event => {
-                const el = event.target.closest("[data-filter]");
-                if (!el) return;
-                $("filter-search").value = el.dataset.filter;
-                applyHistoryFilters();
+                // Clicking a username or IP filters by it; clicking anywhere else on a row toggles the node.
+                const filter = event.target.closest("[data-filter]");
+                if (filter) {
+                    $("filter-search").value = filter.dataset.filter;
+                    applyHistoryFilters();
+                    return;
+                }
+
+                const row = event.target.closest(".tree-row");
+                if (row) toggleNode(row.parentElement);
             });
+
+            $("history-list").addEventListener("keydown", event => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+
+                const row = event.target.closest(".tree-row");
+                if (!row || event.target !== row) return;
+
+                event.preventDefault();
+                toggleNode(row.parentElement);
+            });
+
+            $("expand-all").addEventListener("click", () => setAllNodes(true));
+            $("collapse-all").addEventListener("click", () => setAllNodes(false));
 
             $("clear-filters").addEventListener("click", () => {
                 ["filter-search", "filter-role", "filter-session", "filter-from", "filter-to"].forEach(id => $(id).value = "");
@@ -625,58 +646,124 @@
                 : `${records.length} of ${loginHistory.length} records`;
         }
 
+        /* ---------- Login history tree: day > user > sessions ---------- */
+
+        const openNodes = new Set();   // keys of expanded nodes, kept across filtering and refreshes
+        let treeSeeded = false;
+
+        const CHEV = `<svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round" /></svg>`;
+
+        function toggleNode(node, force) {
+            const open = force ?? !node.classList.contains("open");
+
+            node.classList.toggle("open", open);
+            node.querySelector(":scope > .tree-row").setAttribute("aria-expanded", open);
+
+            if (open) openNodes.add(node.dataset.key);
+            else openNodes.delete(node.dataset.key);
+        }
+
+        function setAllNodes(open) {
+            document.querySelectorAll("#history-list .tree-node").forEach(node => toggleNode(node, open));
+        }
+
+        const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+        const clock = date => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        function leafNode(record, index) {
+            const ago = timeAgo(record._date);
+
+            return `
+            <div class="tree-leaf branch" style="--i:${index}" title="${escapeHTML(formatDate(record.logged_in_at))}">
+                <span class="leaf-dot ${sessionState(record)}"></span>
+                <span class="leaf-time"><strong>${clock(record._date)}</strong>${ago ? `<span>${ago}</span>` : ""}</span>
+                <button class="chip" data-filter="${escapeHTML(record.ip || "")}"
+                    title="Filter by this IP">${escapeHTML(record.ip || "-")}</button>
+                ${record._newIp
+                    ? `<span class="tag-new" title="First time this user appears from this IP in the loaded history">New IP</span>`
+                    : ""}
+                ${sessionHTML(record)}
+            </div>`;
+        }
+
+        function userNode(dayKey, username, items, index, isOpen) {
+            const key = `u:${dayKey}|${username}`;
+            const open = isOpen(key);
+            const role = String(items[0].role || "").toLowerCase();
+
+            return `
+            <div class="tree-node node-user branch${open ? " open" : ""}" data-key="${escapeHTML(key)}" style="--i:${index}">
+                <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}">
+                    ${CHEV}
+                    <span class="avatar sm ${tint(username)}">${escapeHTML(initials(username))}</span>
+                    <button class="link-btn" data-filter="${escapeHTML(username)}"
+                        title="Filter by this user">${escapeHTML(username)}</button>
+                    ${role ? `<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>` : ""}
+                    ${items.some(r => sessionState(r) === "active") ? `<span class="session-pill active">Active</span>` : ""}
+                    ${items.some(r => r._newIp) ? `<span class="tag-new" title="Signed in from a new IP">New IP</span>` : ""}
+                    <span class="tree-meta">${plural(items.length, "login")} · last ${clock(items[0]._date)}</span>
+                </div>
+                <div class="tree-children">
+                    <div class="tree-inner">${items.map(leafNode).join("")}</div>
+                </div>
+            </div>`;
+        }
+
         function renderTimeline(records) {
+            const list = $("history-list");
+
             if (!records.length) {
-                $("history-list").innerHTML = `<div class="empty">No login records match your filters.</div>`;
+                list.innerHTML = `<div class="empty">No login records match your filters.</div>`;
                 return;
             }
 
-            // Group by local calendar day (records are already newest first).
-            const groups = new Map();
+            // Day -> user -> sessions (records are already newest first, so every level stays newest first).
+            const days = new Map();
             records.forEach(record => {
-                const key = record._date.toDateString();
-                if (!groups.has(key)) groups.set(key, []);
-                groups.get(key).push(record);
+                const dayKey = record._date.toDateString();
+                if (!days.has(dayKey)) days.set(dayKey, { date: record._date, users: new Map() });
+
+                const users = days.get(dayKey).users;
+                if (!users.has(record.username)) users.set(record.username, []);
+                users.get(record.username).push(record);
             });
 
-            $("history-list").innerHTML = [...groups.values()].map(items => {
-                const [label, full] = dayLabel(items[0]._date);
+            // First view: open the most recent day so there is something to see.
+            if (!treeSeeded) {
+                treeSeeded = true;
+                openNodes.add(`d:${days.keys().next().value}`);
+            }
 
-                const rows = items.map(record => {
-                    const recordRole = String(record.role || "").toLowerCase();
-                    const ago = timeAgo(record._date);
+            // While searching or filtering, open everything so the matches are visible.
+            const forceOpen = Boolean(
+                $("filter-search").value.trim() || $("filter-role").value || $("filter-session").value);
+            const isOpen = key => forceOpen || openNodes.has(key);
 
-                    return `
-                    <div class="log-row">
-                        <span class="avatar ${tint(record.username)}">${escapeHTML(initials(record.username))}</span>
-
-                        <div class="log-main">
-                            <button class="link-btn" data-filter="${escapeHTML(record.username)}"
-                                title="Filter by this user">${escapeHTML(record.username)}</button>
-                            <span class="role-badge ${escapeHTML(recordRole)}">${escapeHTML(recordRole)}</span>
-                            ${record._newIp
-                            ? `<span class="tag-new" title="First time this user appears from this IP in the loaded history">New IP</span>`
-                            : ""}
-                            ${sessionHTML(record)}
-                        </div>
-
-                        <button class="chip" data-filter="${escapeHTML(record.ip || "")}"
-                            title="Filter by this IP">${escapeHTML(record.ip || "-")}</button>
-
-                        <div class="log-time" title="${escapeHTML(formatDate(record.logged_in_at))}">
-                            <strong>${record._date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
-                            ${ago ? `<span>${ago}</span>` : ""}
-                        </div>
-                    </div>`;
-                }).join("");
+            list.innerHTML = [...days.entries()].map(([dayKey, day]) => {
+                const [label, full] = dayLabel(day.date);
+                const users = [...day.users.entries()];
+                const all = users.flatMap(([, items]) => items);
+                const active = all.filter(r => sessionState(r) === "active").length;
+                const key = `d:${dayKey}`;
+                const open = isOpen(key);
 
                 return `
-                <div class="day-group">
-                    <div class="day-head">
-                        <span><strong>${escapeHTML(label)}</strong>${escapeHTML(full)}</span>
-                        <span>${items.length} login${items.length === 1 ? "" : "s"}</span>
+                <div class="tree-node node-day${open ? " open" : ""}" data-key="${escapeHTML(key)}">
+                    <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}">
+                        ${CHEV}
+                        <span class="day-title"><strong>${escapeHTML(label)}</strong>${escapeHTML(full)}</span>
+                        <span class="tree-meta">
+                            ${active ? `<span class="session-pill active">${active} active</span>` : ""}
+                            <span>${plural(all.length, "login")} · ${plural(users.length, "user")}</span>
+                        </span>
                     </div>
-                    ${rows}
+                    <div class="tree-children">
+                        <div class="tree-inner">
+                            ${users.map(([username, items], i) => userNode(dayKey, username, items, i, isOpen)).join("")}
+                        </div>
+                    </div>
                 </div>`;
             }).join("");
         }

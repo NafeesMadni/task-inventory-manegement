@@ -1483,3 +1483,248 @@ th {
     box-shadow: 0 0 0 0 rgba(32, 132, 95, 0);
   }
 }
+
+/* ---------- Login history tree (day > user > sessions) ---------- */
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background 0.15s;
+}
+
+.tree-row:focus-visible {
+  box-shadow: inset 0 0 0 2px #70b99a;
+}
+
+.chev {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.25s ease;
+}
+
+.tree-node.open > .tree-row .chev {
+  transform: rotate(90deg);
+}
+
+.tree-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* day level */
+
+.node-day > .tree-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px 20px;
+  background: var(--row-hover);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.node-day:first-child > .tree-row {
+  border-top: none;
+}
+
+.node-day > .tree-row:hover {
+  background: #f1f6f3;
+}
+
+.day-title {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.day-title strong {
+  margin-right: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* user level */
+
+.node-user > .tree-row {
+  margin: 2px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+}
+
+.node-user > .tree-row:hover {
+  background: var(--row-hover);
+}
+
+/* session (leaf) level */
+
+.tree-leaf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+}
+
+.tree-leaf:hover {
+  background: var(--row-hover);
+}
+
+.leaf-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaf-time strong {
+  font-size: 13px;
+}
+
+.leaf-time span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.leaf-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.leaf-dot.active {
+  background: var(--primary);
+  animation: session-pulse 1.8s infinite;
+}
+
+.leaf-dot.ended {
+  background: #9aa6a0;
+}
+
+/* collapsing: animate height with grid rows (no JS measuring) */
+
+.tree-children {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.32s ease;
+}
+
+.tree-node.open > .tree-children {
+  grid-template-rows: 1fr;
+}
+
+.tree-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding-left: 22px;
+}
+
+.node-day > .tree-children > .tree-inner {
+  margin-left: 27px;
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+
+.node-user > .tree-children > .tree-inner {
+  margin-left: 20px;
+  padding-bottom: 4px;
+}
+
+/* connector lines: each branch draws its own vertical segment and elbow */
+
+.branch {
+  --stub: 22px;
+  position: relative;
+}
+
+.tree-leaf.branch {
+  --stub: 19px;
+}
+
+.branch::before,
+.branch::after {
+  content: "";
+  position: absolute;
+  left: -22px;
+  background: var(--border);
+  border-radius: 2px;
+  transition: transform 0.4s ease calc(var(--i, 0) * 40ms + 80ms);
+}
+
+.branch::before {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: scaleY(0);
+  transform-origin: top;
+}
+
+.branch:last-child::before {
+  bottom: auto;
+  height: calc(var(--stub) + 1px);
+}
+
+.branch::after {
+  top: var(--stub);
+  width: 16px;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.tree-node.open > .tree-children > .tree-inner > .branch::before {
+  transform: scaleY(1);
+}
+
+.tree-node.open > .tree-children > .tree-inner > .branch::after {
+  transform: scaleX(1);
+}
+
+/* children slide in one after another when a node opens */
+
+.tree-node.open > .tree-children > .tree-inner > .branch {
+  animation: tree-in 0.35s ease both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+@keyframes tree-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-children,
+  .chev,
+  .branch::before,
+  .branch::after {
+    transition: none;
+  }
+
+  .tree-node.open > .tree-children > .tree-inner > .branch,
+  .leaf-dot.active {
+    animation: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .tree-meta {
+    display: none;
+  }
+}
