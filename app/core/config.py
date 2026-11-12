@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = Field(alias="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(alias="GOOGLE_CLIENT_SECRET")
 
+    TURNSTILE_SECRET_KEY: str = Field(alias="TURNSTILE_SECRET_KEY")
+    SITEVERIFY_URL: str = Field(alias="SITEVERIFY_URL")
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _use_psycopg_driver(cls, value: str) -> str:

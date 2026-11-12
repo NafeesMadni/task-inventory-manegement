@@ -30,7 +30,7 @@ from app.database.models import (
     User,
     UserRole,
 )
-from app.dependencies import DBSession, GetCurrentUser
+from app.dependencies import DBSession, GetCurrentUser, VerifyTurnstile
 from app.services import AuthProvider, EmailManager, JWTProvider
 
 
@@ -204,6 +204,7 @@ class UserAPI:
 
     async def signup(
         self,
+        _: VerifyTurnstile,
         request: Request,
         payload: SignupRequest,
         session: DBSession,
@@ -242,6 +243,7 @@ class UserAPI:
 
     async def login(
         self,
+        _: VerifyTurnstile,
         payload: LoginRequest,
         request: Request,
         response: Response,
