@@ -1307,3 +1307,129 @@ th {
   font-style: italic;
   overflow-wrap: anywhere;
 }
+
+/* ---------- Approvals ---------- */
+
+.btn-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #9f3333;
+}
+
+.summary {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--row-hover);
+  font-size: 13px;
+}
+
+.section-label {
+  margin-bottom: 12px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+/* ---------- Google sign-in & join-request page ---------- */
+
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.google-btn:hover {
+  background: var(--background);
+  border-color: #cfd9d3;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.centered {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.state {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 14px 0 6px;
+  text-align: center;
+}
+
+.state-icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.state-icon.bad {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.state h2 {
+  font-size: 19px;
+  letter-spacing: -0.5px;
+}
+
+/* ---------- No-access message ---------- */
+
+.no-access {
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+}
+
+.no-access p {
+  font-size: 14px;
+}
+
+.state-icon.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}

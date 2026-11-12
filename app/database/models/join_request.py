@@ -36,7 +36,7 @@ class JoinRequest(Base):
     )
 
     requested_by: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
 
     requested_from: Mapped[int] = mapped_column(
@@ -69,7 +69,7 @@ class JoinRequest(Base):
 
     # The user who made the join request
     requester: Mapped[User] = relationship(
-        back_populates="join_requests", foreign_keys=[requested_by]
+        back_populates="join_request", foreign_keys=[requested_by]
     )
 
     # The user who received the join request (supervisor/admin)

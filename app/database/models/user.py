@@ -42,6 +42,10 @@ class User(Base):
         enum_column(UserRole, "user_role"), nullable=True
     )
 
+    google_id: Mapped[str | None] = mapped_column(
+        unique=True, index=True, nullable=True
+    )
+
     username: Mapped[str] = mapped_column(
         String(100), unique=True, index=True, nullable=False
     )
@@ -54,7 +58,7 @@ class User(Base):
         String(255), unique=True, index=True, nullable=False
     )
 
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -105,8 +109,10 @@ class User(Base):
     approvals: Mapped[list[RequestApproval]] = relationship(back_populates="approver")
 
     # Join requests made by this user
-    join_requests: Mapped[JoinRequest] = relationship(
-        back_populates="requester", foreign_keys=[JoinRequest.requested_by]
+    join_request: Mapped[JoinRequest | None] = relationship(
+        back_populates="requester",
+        foreign_keys=[JoinRequest.requested_by],
+        uselist=False,
     )
 
     # All join requests received by this user; for supervisors/admin only
@@ -133,7 +139,7 @@ def get_user_loading_options(role: UserRole):
             selectinload(User.device_assignments),
             selectinload(User.device_assignments_assigned_by),
             selectinload(User.approvals),
-            selectinload(User.join_requests),
+            selectinload(User.join_request),
             selectinload(User.received_join_requests),
             selectinload(User.processed_join_requests),
         ])
@@ -143,7 +149,7 @@ def get_user_loading_options(role: UserRole):
             selectinload(User.supervisor_assignment),
             selectinload(User.login_history),
             selectinload(User.device_requests),
-            selectinload(User.join_requests),
+            selectinload(User.join_request),
         ])
 
     return options

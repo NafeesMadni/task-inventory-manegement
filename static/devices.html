@@ -460,9 +460,7 @@
                 allowed = ROUTES.filter(r => r.roles.includes(session.role));
 
                 if (!allowed.length) {
-                    $("page-message").innerHTML =
-                        `Your account (<span class="role-badge ${escapeHTML(session.role)}">${escapeHTML(session.role)}</span>) ` +
-                        `doesn't have access to any device sections yet.`;
+                    $("page-message").innerHTML = Portal.noAccessHTML(session.role, "any device sections");
                     return;
                 }
 

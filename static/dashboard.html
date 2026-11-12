@@ -219,9 +219,7 @@
                         return;
                     }
 
-                    $("page-message").innerHTML =
-                        `Your account (<span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>) ` +
-                        `doesn't have access to any dashboard sections yet.`;
+                    $("page-message").innerHTML = Portal.noAccessHTML(role, "any dashboard sections");
                     return;
                 }
 
