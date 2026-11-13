@@ -1,10 +1,12 @@
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.database.db import get_sessionmaker
 from app.database.models import LoginHistory, User, get_user_loading_options
 from app.services import JWTProvider
@@ -89,4 +91,55 @@ async def get_current_user(
     return user
 
 
+async def verify_turnstile(request: Request) -> None:
+    token = request.headers.get("cf-turnstile-response")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing Turnstile verification token.",
+        )
+
+    # Extract real client IP
+    client_ip = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For")
+        or (request.client.host if request.client else None)
+    )
+
+    data = {
+        "secret": get_settings().TURNSTILE_SECRET_KEY,
+        "response": token,
+    }
+
+    if client_ip:
+        data["remoteip"] = client_ip
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(get_settings().SITEVERIFY_URL, data=data)
+            response.raise_for_status()
+            result = response.json()
+
+        except httpx.HTTPError:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to connect to CAPTCHA verification service.",
+            )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": "CAPTCHA verification failed.",
+                "error_codes": result.get("error-codes", []),
+            },
+        )
+
+    # Enforce hostname matching in production to prevent cross-domain token reuse
+    # if result.get("hostname") != "inventory-task.fastapicloud.dev":
+    #     raise HTTPException(status_code=403, detail="Invalid token hostname.")
+
+
+VerifyTurnstile = Annotated[None, Depends(verify_turnstile)]
 GetCurrentUser = Annotated[User, Depends(get_current_user)]

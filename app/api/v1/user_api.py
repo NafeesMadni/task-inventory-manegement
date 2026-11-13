@@ -4,7 +4,15 @@ from typing import Annotated
 
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import RedirectResponse
 from redis_fastapi import RateLimitBackendDep
 from sqlalchemy import or_, select
@@ -30,7 +38,7 @@ from app.database.models import (
     User,
     UserRole,
 )
-from app.dependencies import DBSession, GetCurrentUser
+from app.dependencies import DBSession, GetCurrentUser, VerifyTurnstile
 from app.services import AuthProvider, EmailManager, JWTProvider
 
 
@@ -198,12 +206,13 @@ class UserAPI:
             key="access_token",
             path="/",
             httponly=True,
-            secure=True,  # Match your cookie configuration
+            secure=True,
             samesite="lax",
         )
 
     async def signup(
         self,
+        _: VerifyTurnstile,
         request: Request,
         payload: SignupRequest,
         session: DBSession,
@@ -242,6 +251,7 @@ class UserAPI:
 
     async def login(
         self,
+        _: VerifyTurnstile,
         payload: LoginRequest,
         request: Request,
         response: Response,
@@ -441,6 +451,7 @@ class UserAPI:
         user: GetCurrentUser,
         session: DBSession,
         response: Response,
+        background_tasks: BackgroundTasks,
     ) -> StatusResponse:
         if payload.requested_role == UserRole.ADMIN:
             raise HTTPException(
@@ -508,7 +519,8 @@ class UserAPI:
         await session.commit()
         await session.refresh(join_request)
 
-        await self.email_manager.send_join_request_notification(
+        background_tasks.add_task(
+            self.email_manager.send_join_request_notification,
             to_email=requested_from_user.email,
             approver_username=requested_from_user.username,
             requester_username=user.username,
@@ -575,6 +587,7 @@ class UserAPI:
         user: GetCurrentUser,
         session: DBSession,
         response: Response,
+        background_tasks: BackgroundTasks,
         reason: Annotated[str | None, Query()] = None,
     ) -> StatusResponse:
 
@@ -641,7 +654,8 @@ class UserAPI:
         await session.commit()
 
         # Notify the requester about the rejection/approval
-        await self.email_manager.send_join_request_decision(
+        background_tasks.add_task(
+            self.email_manager.send_join_request_decision,
             to_email=requester.email,
             requested_role=join_request.requested_role.value,
             approved=grant,
@@ -650,6 +664,7 @@ class UserAPI:
             processed_reason=join_request.processed_reason,
             processed_at=join_request.processed_at,
         )
+
         return StatusResponse(message="Success!")
 
     async def get_users_login_history(

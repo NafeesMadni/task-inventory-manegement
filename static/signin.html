@@ -7,6 +7,9 @@
     <title>Sign In | Device Portal</title>
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/auth.js" defer></script>
+
+    <!-- Load the Cloudflare Turnstile script -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 
 <body class="auth-body" data-auth-page="login">
@@ -61,6 +64,10 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Turnstile widget automatically injects a hidden 'cf-turnstile-response' input -->
+
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAAF-LKquHSLJ4zW15"></div>
 
             <div id="message" class="message" role="alert"></div>
 

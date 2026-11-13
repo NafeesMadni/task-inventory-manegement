@@ -3,7 +3,7 @@ const API_BASE_URL = "/api/v1";
 const DASHBOARD_URL = "/dashboard";
 const JOIN_REQUEST_URL = "/create-join-request";
 
-// Where an already signed-in user belongs. No role yet means they still have to ask for one.
+// Where an already signed-in user belongs.
 function homeFor(role) {
     const value = String(role || "").toLowerCase();
 
@@ -13,27 +13,48 @@ function homeFor(role) {
     return JOIN_REQUEST_URL;
 }
 
-// Error codes the backend can attach to a redirect, e.g. /signin?error=google_failed
 const URL_ERRORS = {
     access_rejected: "Your access request has been rejected.",
     google_failed: "Google sign-in failed. Please try again.",
     google_unverified: "Your Google email isn't verified, so it can't be used to sign in.",
 };
 
+// Get Turnstile token independently from the endpoint payload.
+function getTurnstileToken(form) {
+    const token = new FormData(form).get("cf-turnstile-response");
+
+    if (!token) {
+        throw new Error("Please complete the security verification.");
+    }
+
+    return token;
+}
+
 // All API requests that use authentication cookies go through this.
 async function apiRequest(endpoint, options = {}) {
+    const {
+        turnstileToken,
+        headers = {},
+        ...fetchOptions
+    } = options;
+
     return fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
+        ...fetchOptions,
         credentials: "include",
         headers: {
             Accept: "application/json",
-            ...options.headers,
+            ...headers,
+            ...(turnstileToken
+                ? { "cf-turnstile-response": turnstileToken }
+                : {}),
         },
     });
 }
 
 function showMessage(message, type = "error") {
     const element = document.getElementById("message");
+
+    if (!element) return;
 
     element.textContent = message;
     element.className = `message show ${type}`;
@@ -48,11 +69,14 @@ function getErrorMessage(data) {
         return data.detail.map(error => error.msg).join(", ");
     }
 
+    if (typeof data?.detail?.message === "string") {
+        return data.detail.message;
+    }
+
     return data?.message || "Something went wrong. Please try again.";
 }
 
-// Already signed in? Skip the form and go straight to where the user belongs.
-// A failed check (network error, server down) simply shows the form.
+// Already signed in? Redirect to the appropriate page.
 async function redirectIfAuthenticated() {
     try {
         const response = await apiRequest("/user/me");
@@ -81,6 +105,9 @@ function setupPasswordToggle() {
     document.querySelectorAll("[data-password-toggle]").forEach(button => {
         button.addEventListener("click", () => {
             const input = document.getElementById(button.dataset.passwordToggle);
+
+            if (!input) return;
+
             const visible = input.type === "password";
 
             input.type = visible ? "text" : "password";
@@ -89,36 +116,53 @@ function setupPasswordToggle() {
     });
 }
 
-// Sends the request and follows the server's redirect_url.
-// The cookie is already set by the response, so no extra /me call is needed.
-async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel, successMessage }) {
+// Common authentication submission handler.
+async function submitAuthForm({
+    endpoint,
+    payload,
+    button,
+    form,
+    busyLabel,
+    idleLabel,
+    successMessage
+}) {
     button.disabled = true;
     button.textContent = busyLabel;
 
     let redirecting = false;
 
     try {
+        // Get token separately from JSON payload.
+        const turnstileToken = getTurnstileToken(form);
+
         const response = await apiRequest(endpoint, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+            },
+            turnstileToken,
             body: JSON.stringify(payload),
         });
 
         const data = await response.json().catch(() => ({}));
 
-        // Signed in, but access isn't approved yet: the API answers 403 with a
-        // message (no "detail") and still sets the cookie.
-        const awaitingApproval = response.status === 403 && data?.message && !data?.detail;
+        // Signed in, but access isn't approved yet.
+        const awaitingApproval =
+            response.status === 403 &&
+            data?.message &&
+            !data?.detail;
 
         if (!response.ok && !awaitingApproval) {
             throw new Error(getErrorMessage(data));
         }
 
         redirecting = true;
+
         showMessage(data.message || successMessage, "success");
 
         window.location.replace(
-            data.redirect_url || (awaitingApproval ? JOIN_REQUEST_URL : DASHBOARD_URL)
+            data.redirect_url ||
+            (awaitingApproval ? JOIN_REQUEST_URL : DASHBOARD_URL)
         );
 
     } catch (error) {
@@ -127,6 +171,21 @@ async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel,
                 ? "Unable to connect to the server."
                 : error.message
         );
+
+        // Reset Turnstile after a failed submission because
+        // tokens are single-use.
+        if (window.turnstile) {
+            const widget = document.querySelector(".cf-turnstile");
+
+            if (widget) {
+                try {
+                    window.turnstile.reset();
+                } catch (resetError) {
+                    console.error("Turnstile reset failed:", resetError);
+                }
+            }
+        }
+
     } finally {
         if (!redirecting) {
             button.disabled = false;
@@ -135,6 +194,7 @@ async function submitAuthForm({ endpoint, payload, button, busyLabel, idleLabel,
     }
 }
 
+// Login handler.
 function handleLogin(event) {
     event.preventDefault();
 
@@ -142,6 +202,7 @@ function handleLogin(event) {
 
     submitAuthForm({
         endpoint: "/user/login",
+        form,
         payload: {
             email: form.email.value.trim(),
             password: form.password.value,
@@ -153,7 +214,7 @@ function handleLogin(event) {
     });
 }
 
-// Signup only creates the account. The role is requested afterwards on /create-join-request.
+// Signup handler.
 function handleSignup(event) {
     event.preventDefault();
 
@@ -161,6 +222,7 @@ function handleSignup(event) {
 
     submitAuthForm({
         endpoint: "/user/signup",
+        form,
         payload: {
             first_name: form.firstName.value.trim(),
             last_name: form.lastName.value.trim(),
@@ -189,11 +251,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (page === "signup") {
         document.getElementById("signupForm")
-            .addEventListener("submit", handleSignup);
+            ?.addEventListener("submit", handleSignup);
     }
 
     if (page === "login") {
         document.getElementById("loginForm")
-            .addEventListener("submit", handleLogin);
+            ?.addEventListener("submit", handleLogin);
     }
 });
