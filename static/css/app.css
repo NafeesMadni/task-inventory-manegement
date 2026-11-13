@@ -1728,3 +1728,72 @@ th {
     display: none;
   }
 }
+
+/* ---------- Tree: request rows, steps and shared extras ---------- */
+
+.node-request > .tree-row {
+  flex-wrap: wrap;
+  margin: 2px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+}
+
+.node-request > .tree-row:hover {
+  background: var(--row-hover);
+}
+
+.tree-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.tree-leaf.multi {
+  align-items: flex-start;
+}
+
+.tree-leaf.multi .leaf-dot {
+  margin-top: 5px;
+}
+
+.step,
+.leaf-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+
+.step-sub {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.leaf-dot.ok {
+  background: var(--primary);
+}
+.leaf-dot.bad {
+  background: var(--danger);
+}
+.leaf-dot.warn {
+  background: #d9a431;
+}
+.leaf-dot.info {
+  background: #5b8fb9;
+}
+
+@media (max-width: 700px) {
+  .node-request > .tree-row .tree-meta {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .tree-actions {
+    margin-left: auto;
+  }
+}

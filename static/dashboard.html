@@ -164,8 +164,10 @@
 
 
     <script src="/static/js/shell.js"></script>
+    <script src="/static/js/tree.js"></script>
     <script>
         const { $, api, escapeHTML, toast } = Portal;
+        const { CHEV, plural, clock, dayLabel } = TreeUI;
 
         let currentUser = null;
         let role = "pending";
@@ -336,31 +338,17 @@
             });
 
             // Clicking a username or IP in the timeline filters by it.
-            $("history-list").addEventListener("click", event => {
+            historyTree = TreeUI.create($("history-list"), {
                 // Clicking a username or IP filters by it; clicking anywhere else on a row toggles the node.
-                const filter = event.target.closest("[data-filter]");
-                if (filter) {
-                    $("filter-search").value = filter.dataset.filter;
+                actionSelector: "[data-filter]",
+                onAction: el => {
+                    $("filter-search").value = el.dataset.filter;
                     applyHistoryFilters();
-                    return;
-                }
-
-                const row = event.target.closest(".tree-row");
-                if (row) toggleNode(row.parentElement);
+                },
             });
 
-            $("history-list").addEventListener("keydown", event => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-
-                const row = event.target.closest(".tree-row");
-                if (!row || event.target !== row) return;
-
-                event.preventDefault();
-                toggleNode(row.parentElement);
-            });
-
-            $("expand-all").addEventListener("click", () => setAllNodes(true));
-            $("collapse-all").addEventListener("click", () => setAllNodes(false));
+            $("expand-all").addEventListener("click", () => historyTree.setAll(true));
+            $("collapse-all").addEventListener("click", () => historyTree.setAll(false));
 
             $("clear-filters").addEventListener("click", () => {
                 ["filter-search", "filter-role", "filter-session", "filter-from", "filter-to"].forEach(id => $(id).value = "");
@@ -591,21 +579,6 @@
             if (roles.includes(selected)) select.value = selected;
         }
 
-        function dayLabel(date) {
-            const today = new Date();
-            const yesterday = new Date();
-            yesterday.setDate(today.getDate() - 1);
-
-            const full = date.toLocaleDateString(undefined, {
-                month: "short", day: "numeric",
-                ...(date.getFullYear() !== today.getFullYear() && { year: "numeric" })
-            });
-
-            if (date.toDateString() === today.toDateString()) return ["Today", full];
-            if (date.toDateString() === yesterday.toDateString()) return ["Yesterday", full];
-            return [date.toLocaleDateString(undefined, { weekday: "long" }), full];
-        }
-
         function applyHistoryFilters() {
             const search = $("filter-search").value.trim().toLowerCase();
             const roleFilter = $("filter-role").value;
@@ -648,29 +621,8 @@
 
         /* ---------- Login history tree: day > user > sessions ---------- */
 
-        const openNodes = new Set();   // keys of expanded nodes, kept across filtering and refreshes
+        let historyTree = null;        // expand/collapse state, created in bindEvents
         let treeSeeded = false;
-
-        const CHEV = `<svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round" /></svg>`;
-
-        function toggleNode(node, force) {
-            const open = force ?? !node.classList.contains("open");
-
-            node.classList.toggle("open", open);
-            node.querySelector(":scope > .tree-row").setAttribute("aria-expanded", open);
-
-            if (open) openNodes.add(node.dataset.key);
-            else openNodes.delete(node.dataset.key);
-        }
-
-        function setAllNodes(open) {
-            document.querySelectorAll("#history-list .tree-node").forEach(node => toggleNode(node, open));
-        }
-
-        const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-        const clock = date => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
         function leafNode(record, index) {
             const ago = timeAgo(record._date);
@@ -733,13 +685,13 @@
             // First view: open the most recent day so there is something to see.
             if (!treeSeeded) {
                 treeSeeded = true;
-                openNodes.add(`d:${days.keys().next().value}`);
+                historyTree.openNodes.add(`d:${days.keys().next().value}`);
             }
 
             // While searching or filtering, open everything so the matches are visible.
             const forceOpen = Boolean(
                 $("filter-search").value.trim() || $("filter-role").value || $("filter-session").value);
-            const isOpen = key => forceOpen || openNodes.has(key);
+            const isOpen = key => forceOpen || historyTree.openNodes.has(key);
 
             list.innerHTML = [...days.entries()].map(([dayKey, day]) => {
                 const [label, full] = dayLabel(day.date);
