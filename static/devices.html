@@ -89,6 +89,43 @@
                 </div>
             </div>
         </section>
+        <section id="panel-my-devices" class="hidden">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Devices</p>
+                    <h1>My Devices <span class="role-badge" data-role-badge></span></h1>
+                    <p class="subtitle">Devices currently assigned to you. Something wrong with one? Request a repair.
+                    </p>
+                </div>
+                <button class="btn btn-primary" id="md-refresh">Refresh</button>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <div class="field grow">
+                        <label for="md-search">Search</label>
+                        <input type="text" id="md-search" placeholder="Name, brand, processor or ID">
+                    </div>
+                    <span class="count" id="md-count">0 devices</span>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Device</th>
+                                <th>Specs</th>
+                                <th>Condition</th>
+                                <th>Assigned</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="md-table"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <section id="panel-view-requests" class="hidden">
             <div class="panel-heading">
                 <div>
@@ -316,9 +353,9 @@
 
             <!-- Repair -->
             <div class="form-group hidden" id="grp-repair">
-                <label for="f-repair-id">Device ID</label>
-                <input type="number" id="f-repair-id" name="repair_device_id" min="1" step="1" placeholder="e.g. 42">
-                <span class="field-help">Only devices currently assigned to you can be sent for repair.</span>
+                <label>Choose the device to repair</label>
+                <div class="picker" id="repair-picker"></div>
+                <span class="field-help">These are the devices currently assigned to you.</span>
             </div>
 
             <div class="form-group">
@@ -423,7 +460,9 @@
     <script src="/static/js/shell.js"></script>
     <script src="/static/js/tree.js"></script>
     <script src="/static/js/request-ui.js"></script>
+    <script src="/static/js/device-ui.js"></script>
     <script src="/static/js/panels/devices.js"></script>
+    <script src="/static/js/panels/my-devices.js"></script>
     <script src="/static/js/panels/requests.js"></script>
     <script src="/static/js/panels/approvals.js"></script>
     <script>
@@ -432,6 +471,7 @@
         /* Each section: who can see it, and which panel script drives it. */
         const ROUTES = [
             { id: "all-devices", label: "All Devices", roles: ["admin"], panel: DevicesPanel },
+            { id: "my-devices", label: "My Devices", roles: ["supervisor", "developer"], panel: MyDevicesPanel },
             { id: "view-requests", label: "Requests", roles: ["supervisor", "developer"], panel: RequestsPanel },
             { id: "approvals", label: "Approvals", roles: ["admin", "supervisor"], panel: ApprovalsPanel },
         ];
@@ -482,10 +522,22 @@
             Portal.setTitle(active.label);
 
             if (!mounted[active.id]) {
-                mounted[active.id] = true;
-                active.panel.mount(session).catch(error => toast(error.message, "error"));
+                mounted[active.id] = active.panel.mount(session).catch(error => toast(error.message, "error"));
             }
         }
+
+        // "Request repair" on a My Devices row: go to the Requests tab and open the repair dialog
+        // with that device already selected.
+        document.addEventListener("portal:request-repair", async event => {
+            const target = allowed.find(r => r.id === "view-requests");
+            if (!target) return;
+
+            location.hash = target.id;
+            route(); // don't wait for the hashchange event, so the panel is mounted right away
+            await mounted[target.id];
+
+            RequestsPanel.openRepair(event.detail.deviceId);
+        });
 
         init();
     </script>

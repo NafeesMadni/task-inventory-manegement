@@ -22,10 +22,10 @@ class DeviceStatus(str, Enum):
 
 
 class DeviceCondition(str, Enum):
-    NEW = "new"
-    FAIR = "fair"
-    GOOD = "good"
-    POOR = "poor"
+    NEW = "new"  # No repair
+    GOOD = "good"  # 1 Repair
+    FAIR = "fair"  # 2-3 Repairs
+    POOR = "poor"  # 4+ Repairs
 
 
 class DeviceRequestType(str, Enum):
@@ -49,5 +49,5 @@ class ApprovalDecision(str, Enum):
 
 class RepairStatus(str, Enum):
     SCHEDULED = "scheduled"
-    IN_PROGRESS = "in_progress"
+    IN_PROGRESS = "in_progress"  # should be removed; no purpose
     COMPLETED = "completed"

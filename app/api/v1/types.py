@@ -180,6 +180,12 @@ class AvailableDevicesResponse(BaseModel):
     condition: DeviceCondition
 
 
+class MyDevicesResponse(BaseModel):
+    device_info: AvailableDevicesResponse
+    assigned_at: datetime | None = None
+    condition_on_issue: DeviceCondition | None = None
+
+
 class AssignedByDevicesResponse(BaseModel):
     id: int
     device_id: int

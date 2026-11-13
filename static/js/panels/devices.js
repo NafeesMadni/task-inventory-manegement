@@ -4,6 +4,7 @@
 
 const DevicesPanel = (() => {
         const { $, api, escapeHTML, pretty, toast } = Portal;
+        const { statusTone, conditionTone } = DeviceUI;
 
         let role = "pending";
         let allDevices = [];   // whole fleet, used for the stat cards
@@ -15,23 +16,6 @@ const DevicesPanel = (() => {
         function formatDate(value) {
             const date = new Date(value);
             return !value || Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
-        }
-
-        function statusTone(value) {
-            const v = pretty(value);
-            if (v.includes("avail")) return "ok";
-            if (v.includes("reserv") || v.includes("assign") || v.includes("issue")) return "info";
-            if (v.includes("repair")) return "warn";
-            if (v.includes("retire") || v.includes("lost") || v.includes("damag")) return "bad";
-            return "neutral";
-        }
-
-        function conditionTone(value) {
-            const v = pretty(value);
-            if (v.includes("new") || v.includes("good") || v.includes("excellent")) return "ok";
-            if (v.includes("fair") || v.includes("used")) return "warn";
-            if (v.includes("poor") || v.includes("bad") || v.includes("damag") || v.includes("broken")) return "bad";
-            return "neutral";
         }
 
         function tableMessage(text, isError = false) {

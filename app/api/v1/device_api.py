@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Query, Response, status
@@ -11,6 +11,7 @@ from app.api.v1.types import (
     AllDevicesRequestsResponse,
     AvailableDevicesResponse,
     MakeDeviceRequest,
+    MyDevicesResponse,
     ProcessDeviceRequest,
     SearchDevicesRequest,
     SearchOptionsResponse,
@@ -33,7 +34,10 @@ from app.database.models import (
 )
 from app.dependencies import DBSession, GetCurrentUser
 from app.services import EmailManager
-from app.services.tasks_manager import send_device_scheduled_reminder_alert
+from app.services.tasks_manager import (
+    process_scheduled_device_request,
+    send_device_scheduled_reminder_alert,
+)
 
 
 class DeviceAPI:
@@ -57,6 +61,14 @@ class DeviceAPI:
             response_model=list[AvailableDevicesResponse],
             status_code=status.HTTP_200_OK,
         )
+        self.router.add_api_route(
+            "/my-devices",
+            endpoint=self.get_my_devices,
+            methods=["GET"],
+            response_model=list[MyDevicesResponse],
+            status_code=status.HTTP_200_OK,
+        )
+
         self.router.add_api_route(
             "/add",
             endpoint=self.add_device,
@@ -238,6 +250,44 @@ class DeviceAPI:
             )
             for device in available_devices
         ]
+
+    async def get_my_devices(
+        self, user: GetCurrentUser, session: DBSession
+    ) -> list[MyDevicesResponse]:
+        results = await session.scalars(
+            select(DeviceAssignment)
+            .options(selectinload(DeviceAssignment.device))
+            .where(
+                DeviceAssignment.assigned_to == user.id,
+                DeviceAssignment.returned_at.is_(None),
+            )
+        )
+        device_assignments = results.all()
+        devices: list[MyDevicesResponse] = []
+
+        for da in device_assignments:
+            device = da.device
+            if device.status == DeviceStatus.ASSIGNED:
+                devices.append(
+                    MyDevicesResponse(
+                        device_info=AvailableDevicesResponse(
+                            id=device.id,
+                            name=device.name,
+                            ram_gb=device.ram_gb,
+                            ssd_gb=device.ssd_gb,
+                            hdd_gb=device.hdd_gb,
+                            processor=device.processor,
+                            brand=device.brand,
+                            status=device.status,
+                            condition=device.condition,
+                            issued_at=device.issued_at,
+                        ),
+                        assigned_at=da.assigned_at,
+                        condition_on_issue=da.condition_on_issue,
+                    )
+                )
+
+        return devices
 
     async def add_device(
         self,
@@ -487,6 +537,8 @@ class DeviceAPI:
                     and devices_request_record.type == DeviceRequestType.REPAIR
                 ):
                     device = devices_request_record.device
+                    # For now there is no one to tell when will the requester received the repaired device. Admin can only set the scheduled time
+                    # So set device.status to 'Repair' here and to 'Assigned' in process_scheduled_device_request task.
                     device.status = DeviceStatus.REPAIR
 
                     device_repair = DeviceRepair(
@@ -515,7 +567,6 @@ class DeviceAPI:
                             assigned_to=devices_request_record.requested_by,
                             assigned_by=user.id,
                             scheduled_at=payload.scheduled_at,
-                            condition_on_issue=device.condition,
                         )
 
                         session.add(device_assignment)
@@ -533,6 +584,9 @@ class DeviceAPI:
 
                         session.add(device)
                         await session.flush()
+
+                        # Link the new device to the request
+                        devices_request_record.device_id = device.id
 
                         device_assignment = DeviceAssignment(
                             device_id=device.id,
@@ -565,6 +619,7 @@ class DeviceAPI:
                     )
 
         await session.commit()
+
         background_tasks.add_task(
             self.email_manager.send_device_request_decision,
             to_email=devices_request_record.requester.email,
@@ -606,11 +661,12 @@ class DeviceAPI:
 
         if device and payload.scheduled_at:
             now = datetime.now(UTC)
+            scheduled_at = payload.scheduled_at
 
-            time_difference = payload.scheduled_at - now
-            total_seconds = time_difference.total_seconds()
+            # Reminder: 12 hours before scheduled time
+            reminder_at = scheduled_at - timedelta(hours=12)
 
-            device_scheduled_alert_task_countdown = max(0, int(total_seconds))
+            reminder_countdown = max(0, int((reminder_at - now).total_seconds()))
 
             send_device_scheduled_reminder_alert.apply_async(  # type: ignore
                 kwargs={
@@ -622,7 +678,12 @@ class DeviceAPI:
                     "device_serial": device.serial_no,
                     "scheduled_at": payload.scheduled_at,
                 },
-                countdown=device_scheduled_alert_task_countdown,
+                countdown=reminder_countdown,
+            )
+            # Process records: at scheduled time
+            process_countdown = max(0, int((scheduled_at - now).total_seconds()))
+            process_scheduled_device_request.apply_async(  # type: ignore
+                kwargs={"request_id": payload.request_id}, countdown=process_countdown
             )
 
         return StatusResponse(message=f"Request {decision.value} successful.")
