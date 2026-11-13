@@ -78,7 +78,7 @@ const RequestsPanel = (() => {
 
             try {
                 // only_my_pending=true returns the signed-in user's own requests (developers and supervisors).
-                const response = await api(`/device/all-requests?only_my_pending=${role === "admin" ? "false" : "true"}`, { method: "POST" });
+                const response = await api("/device/all-requests?only_my_pending=true", { method: "POST" });
                 if (!response) return;
                 if (response.status === 403) throw new Error("You are not authorized to view these requests.");
                 if (!response.ok) throw new Error("Unable to load your requests.");
@@ -132,9 +132,7 @@ const RequestsPanel = (() => {
                 : `${visible.length} of ${requests.length} requests`;
 
             if (!requests.length) {
-                tableMessage(role === "admin"
-                    ? "No device requests have been made yet."
-                    : "You haven't made any requests yet. Use “New request” to get started.");
+                tableMessage("You haven't made any requests yet. Use “New request” to get started.");
                 return;
             }
 
@@ -155,7 +153,6 @@ const RequestsPanel = (() => {
                     <td>
                         <div class="device-name">#${escapeHTML(request.request_id)}</div>
                         <span class="pill ${typeTone(request.type)}" style="margin-top:6px">${escapeHTML(pretty(request.type))}</span>
-                        ${request.requester_username ? `<div class="device-sub">by ${escapeHTML(request.requester_username)}</div>` : ""}
                     </td>
                     <td>${details}</td>
                     <td class="muted" title="${escapeHTML(formatDateTime(request.requested_at))}">${formatDate(request.requested_at)}</td>
@@ -344,11 +341,6 @@ const RequestsPanel = (() => {
     // Called once, the first time the panel is shown.
     async function mount(session) {
         role = session.role;
-        if (role === "admin") {
-            // Admins read every request but never create one.
-            $("new-btn").classList.add("hidden");
-            $("rq-subtitle").textContent = "Every device request in the organization, with its approval progress.";
-        }
         bindEvents();
         await loadRequests();
     }

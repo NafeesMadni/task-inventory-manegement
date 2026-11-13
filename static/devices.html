@@ -201,25 +201,12 @@
                         </select>
                     </div>
 
+                    <button class="btn btn-sm" id="ap-expand">Expand all</button>
+                    <button class="btn btn-sm" id="ap-collapse">Collapse all</button>
                     <span class="count" id="ap-count">0 requests</span>
                 </div>
 
-                <div class="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Request</th>
-                                <th>Requester</th>
-                                <th>Details</th>
-                                <th>Requested</th>
-                                <th>Approvals</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="approvals-table"></tbody>
-                    </table>
-                </div>
+                <div class="timeline" id="ap-list"></div>
             </div>
         </section>
     </main>
@@ -434,6 +421,7 @@
     </dialog>
 
     <script src="/static/js/shell.js"></script>
+    <script src="/static/js/tree.js"></script>
     <script src="/static/js/request-ui.js"></script>
     <script src="/static/js/panels/devices.js"></script>
     <script src="/static/js/panels/requests.js"></script>
@@ -444,7 +432,7 @@
         /* Each section: who can see it, and which panel script drives it. */
         const ROUTES = [
             { id: "all-devices", label: "All Devices", roles: ["admin"], panel: DevicesPanel },
-            { id: "view-requests", label: "Requests", roles: ["admin", "supervisor", "developer"], panel: RequestsPanel },
+            { id: "view-requests", label: "Requests", roles: ["supervisor", "developer"], panel: RequestsPanel },
             { id: "approvals", label: "Approvals", roles: ["admin", "supervisor"], panel: ApprovalsPanel },
         ];
 

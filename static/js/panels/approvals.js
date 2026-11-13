@@ -4,21 +4,23 @@
 
 const ApprovalsPanel = (() => {
         const { $, api, escapeHTML, pretty, toast, errorMessage } = Portal;
-        const { formatDate, formatDateTime, statusKind, typeTone, renderApprovals, STATUS_TONE } = RequestUI;
+        const { formatDate, formatDateTime, statusKind, typeTone, STATUS_TONE } = RequestUI;
+        const { CHEV, plural, dayLabel } = TreeUI;
 
         let me = "";
         let role = "pending";
         let requests = [];
         let view = "awaiting";
         let firstLoad = true;
+        let tree = null;      // expand/collapse state for the request tree
+        let treeSeeded = false;
         let current = null;   // request shown in the dialog
         let grant = true;     // decision shown in the dialog
 
         /* ---------- Helpers ---------- */
 
-        function tableMessage(text, isError = false) {
-            $("approvals-table").innerHTML =
-                `<tr><td colspan="7" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
+        function listMessage(text, isError = false) {
+            $("ap-list").innerHTML = `<div class="empty ${isError ? "error" : ""}">${escapeHTML(text)}</div>`;
         }
 
         const isNewType = request => pretty(request.type).includes("new");
@@ -48,17 +50,21 @@ const ApprovalsPanel = (() => {
 
         function bindEvents() {
             $("ap-refresh").addEventListener("click", loadRequests);
-            $("ap-type").addEventListener("change", renderTable);
+            $("ap-type").addEventListener("change", renderList);
 
             $("view-switch").addEventListener("click", event => {
                 const btn = event.target.closest("button[data-view]");
                 if (btn) setView(btn.dataset.view);
             });
 
-            $("approvals-table").addEventListener("click", event => {
-                const btn = event.target.closest("button[data-action]");
-                if (btn) openDialog(Number(btn.dataset.id), btn.dataset.action === "approve");
+            // Approve / Reject buttons sit on each request row; clicking anywhere else on a row expands it.
+            tree = TreeUI.create($("ap-list"), {
+                actionSelector: "button[data-action]",
+                onAction: btn => openDialog(Number(btn.dataset.id), btn.dataset.action === "approve"),
             });
+
+            $("ap-expand").addEventListener("click", () => tree.setAll(true));
+            $("ap-collapse").addEventListener("click", () => tree.setAll(false));
 
             // Dialog
             $("dlg-close").addEventListener("click", closeDialog);
@@ -73,13 +79,13 @@ const ApprovalsPanel = (() => {
             view = next;
             document.querySelectorAll("#view-switch button").forEach(btn =>
                 btn.classList.toggle("active", btn.dataset.view === next));
-            renderTable();
+            renderList();
         }
 
         /* ---------- Data ---------- */
 
         async function loadRequests() {
-            tableMessage("Loading requests...");
+            listMessage("Loading requests...");
 
             try {
                 // Admins and supervisors both read with only_my_pending=false:
@@ -114,10 +120,10 @@ const ApprovalsPanel = (() => {
                 if (types.includes(selected)) $("ap-type").value = selected;
 
                 renderStats();
-                renderTable();
+                renderList();
 
             } catch (error) {
-                tableMessage(error.message, true);
+                listMessage(error.message, true);
             }
         }
 
@@ -131,17 +137,6 @@ const ApprovalsPanel = (() => {
             $("ap-s-progress").textContent = kind("pending") - awaiting;
             $("ap-s-approved").textContent = kind("approved");
             $("ap-s-rejected").textContent = kind("rejected");
-        }
-
-        // Requester, issue and device name are optional: they show once your API includes them.
-        function requesterCell(request) {
-            if (!request.requester_username) return `<span class="muted">-</span>`;
-
-            const r = String(request.requester_role ?? "").toLowerCase();
-            return `<div class="person">
-                        <span class="person-name">${escapeHTML(request.requester_username)}</span>
-                        ${r ? `<span class="role-badge ${escapeHTML(r)}">${escapeHTML(r)}</span>` : ""}
-                    </div>`;
         }
 
         function detailsCell(request) {
@@ -158,44 +153,128 @@ const ApprovalsPanel = (() => {
             return main + issue;
         }
 
-        function renderTable() {
+        /* Tree: day > request > (details + one step per approver) */
+
+        function stepLeaf(step, index) {
+            const kind = statusKind(step.decision);
+            const approverRole = String(step.role ?? "").toLowerCase();
+            const when = kind === "pending"
+                ? "Waiting for a decision"
+                : `${pretty(step.decision)} · ${formatDateTime(step.acted_at)}`;
+
+            return `
+            <div class="tree-leaf multi branch" style="--i:${index}">
+                <span class="leaf-dot ${STATUS_TONE[kind]}"></span>
+                <div class="step">
+                    <div class="step-line">
+                        <strong>${escapeHTML(step.approver_username)}</strong>
+                        ${step.approver_username === me ? `<span class="muted">(you)</span>` : ""}
+                        ${approverRole ? `<span class="role-badge ${escapeHTML(approverRole)}">${escapeHTML(approverRole)}</span>` : ""}
+                        <span class="muted">· Level ${escapeHTML(step.level)}</span>
+                    </div>
+                    <div class="muted step-sub">${escapeHTML(when.charAt(0).toUpperCase() + when.slice(1))}</div>
+                    ${step.remarks ? `<div class="muted remark">“${escapeHTML(step.remarks)}”</div>` : ""}
+                </div>
+            </div>`;
+        }
+
+        function requestNode(request, index) {
+            const key = `r:${request.request_id}`;
+            const open = tree.openNodes.has(key);
+            const waiting = isAwaiting(request);
+            const requesterRole = String(request.requester_role ?? "").toLowerCase();
+            const steps = [...(request.approvals || [])].sort((a, b) => a.level - b.level);
+
+            return `
+            <div class="tree-node node-request branch${open ? " open" : ""}" data-key="${escapeHTML(key)}" style="--i:${index}">
+                <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}">
+                    ${CHEV}
+                    <span class="device-name">#${escapeHTML(request.request_id)}</span>
+                    <span class="pill ${typeTone(request.type)}">${escapeHTML(pretty(request.type))}</span>
+                    ${request.requester_username
+                        ? `<span class="person-name">${escapeHTML(request.requester_username)}</span>` +
+                          (requesterRole ? `<span class="role-badge ${escapeHTML(requesterRole)}">${escapeHTML(requesterRole)}</span>` : "")
+                        : ""}
+                    ${waiting ? `<span class="pill warn">Waiting for you</span>` : ""}
+                    <span class="tree-meta">
+                        <span title="${escapeHTML(formatDateTime(request.requested_at))}">${formatDate(request.requested_at)}</span>
+                        <span class="pill ${STATUS_TONE[statusKind(request.status)]}">${escapeHTML(pretty(request.status))}</span>
+                    </span>
+                    ${waiting ? `
+                    <span class="tree-actions">
+                        <button class="btn btn-sm btn-approve" data-action="approve" data-id="${request.request_id}">Approve</button>
+                        <button class="btn btn-sm btn-reject" data-action="reject" data-id="${request.request_id}">Reject</button>
+                    </span>` : ""}
+                </div>
+                <div class="tree-children">
+                    <div class="tree-inner">
+                        <div class="tree-leaf multi branch" style="--i:0">
+                            <span class="leaf-dot info"></span>
+                            <div class="leaf-detail">${detailsCell(request)}</div>
+                        </div>
+                        ${steps.map((step, i) => stepLeaf(step, i + 1)).join("")}
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function renderList() {
             const type = $("ap-type").value;
+            const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-            const visible = requests.filter(r =>
-                (view === "all" || isAwaiting(r)) && (!type || String(r.type) === type));
+            const visible = requests
+                .filter(r => (view === "all" || isAwaiting(r)) && (!type || String(r.type) === type))
+                // Newest day first; inside a day, requests waiting for me come first.
+                .sort((a, b) =>
+                    (startOfDay(b._date) - startOfDay(a._date)) ||
+                    (isAwaiting(b) - isAwaiting(a)) ||
+                    (b._date - a._date));
 
-            $("ap-count").textContent = `${visible.length} request${visible.length === 1 ? "" : "s"}`;
+            $("ap-count").textContent = plural(visible.length, "request");
 
             if (!visible.length) {
-                tableMessage(view === "awaiting" && !type
+                listMessage(view === "awaiting" && !type
                     ? "Nothing is waiting for your decision."
                     : "No requests match your filters.");
                 return;
             }
 
-            $("approvals-table").innerHTML = visible.map(request => {
-                const waiting = isAwaiting(request);
+            const days = new Map();
+            visible.forEach(request => {
+                const key = request._date.toDateString();
+                if (!days.has(key)) days.set(key, { date: request._date, items: [] });
+                days.get(key).items.push(request);
+            });
 
-                const actions = waiting
-                    ? `<div class="actions">
-                           <button class="btn btn-sm btn-approve" data-action="approve" data-id="${request.request_id}">Approve</button>
-                           <button class="btn btn-sm btn-reject" data-action="reject" data-id="${request.request_id}">Reject</button>
-                       </div>`
-                    : `<span class="muted">-</span>`;
+            // First view: open every day that has something waiting for me (or the newest day).
+            if (!treeSeeded) {
+                treeSeeded = true;
+                days.forEach((day, key) => { if (day.items.some(isAwaiting)) tree.openNodes.add(`d:${key}`); });
+                if (![...days.keys()].some(k => tree.openNodes.has(`d:${k}`))) tree.openNodes.add(`d:${days.keys().next().value}`);
+            }
+
+            $("ap-list").innerHTML = [...days.entries()].map(([dayKey, day]) => {
+                const key = `d:${dayKey}`;
+                const open = tree.openNodes.has(key);
+                const [label, full] = dayLabel(day.date);
+                const waiting = day.items.filter(isAwaiting).length;
 
                 return `
-                <tr>
-                    <td>
-                        <div class="device-name">#${escapeHTML(request.request_id)}</div>
-                        <span class="pill ${typeTone(request.type)}" style="margin-top:6px">${escapeHTML(pretty(request.type))}</span>
-                    </td>
-                    <td>${requesterCell(request)}</td>
-                    <td>${detailsCell(request)}</td>
-                    <td class="muted" title="${escapeHTML(formatDateTime(request.requested_at))}">${formatDate(request.requested_at)}</td>
-                    <td>${renderApprovals(request.approvals, me)}</td>
-                    <td><span class="pill ${STATUS_TONE[statusKind(request.status)]}">${escapeHTML(pretty(request.status))}</span></td>
-                    <td>${actions}</td>
-                </tr>`;
+                <div class="tree-node node-day${open ? " open" : ""}" data-key="${escapeHTML(key)}">
+                    <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}">
+                        ${CHEV}
+                        <span class="day-title"><strong>${escapeHTML(label)}</strong>${escapeHTML(full)}</span>
+                        <span class="tree-meta">
+                            ${waiting ? `<span class="pill warn">${waiting} waiting for you</span>` : ""}
+                            <span>${plural(day.items.length, "request")}</span>
+                        </span>
+                    </div>
+                    <div class="tree-children">
+                        <div class="tree-inner">
+                            ${day.items.map((request, i) => requestNode(request, i)).join("")}
+                        </div>
+                    </div>
+                </div>`;
             }).join("");
         }
 
