@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -266,6 +266,7 @@ class DeviceAPI:
         user: GetCurrentUser,
         session: DBSession,
         response: Response,
+        background_tasks: BackgroundTasks,
     ) -> StatusResponse:
 
         if user.role == UserRole.ADMIN:
@@ -366,8 +367,8 @@ class DeviceAPI:
         # Notify current approver
         if current_approver:
             print(f"sending email to {current_approver.email}...")
-
-            await self.email_manager.send_device_request_notification(
+            background_tasks.add_task(
+                self.email_manager.send_device_request_notification,
                 to_email=current_approver.email,
                 approver_username=current_approver.username,
                 requester_username=user.username,
@@ -394,6 +395,7 @@ class DeviceAPI:
         user: GetCurrentUser,
         session: DBSession,
         response: Response,
+        background_tasks: BackgroundTasks,
     ):
         # Developers are the lowest in rank and not allowed to process any kind of device requests
         if user.role == UserRole.DEVELOPER:
@@ -563,8 +565,8 @@ class DeviceAPI:
                     )
 
         await session.commit()
-
-        await self.email_manager.send_device_request_decision(
+        background_tasks.add_task(
+            self.email_manager.send_device_request_decision,
             to_email=devices_request_record.requester.email,
             request_id=devices_request_record.id,
             device_name=devices_request_record.device.name
@@ -584,7 +586,8 @@ class DeviceAPI:
         )
 
         if next_request_approval:
-            await self.email_manager.send_device_request_notification(
+            background_tasks.add_task(
+                self.email_manager.send_device_request_notification,
                 to_email=next_request_approval.approver.email,
                 approver_username=next_request_approval.approver.username,
                 requester_username=user.username,

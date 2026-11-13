@@ -25,7 +25,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Async Inventory Management System!", lifespan=lifespan)
 
-
 # Add SessionMiddleware to enable session support
 app.add_middleware(SessionMiddleware, secret_key=get_settings().SESSION_SECRET)
 
