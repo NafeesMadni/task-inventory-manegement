@@ -89,6 +89,83 @@
                 </div>
             </div>
         </section>
+        <section id="panel-history" class="hidden">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h1>Device History <span class="role-badge" data-role-badge></span></h1>
+                    <p class="subtitle">Who has had each device and every repair it has been through.</p>
+                </div>
+                <button class="btn btn-primary" id="hi-refresh">Refresh</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <p>Devices</p>
+                    <h2 id="hi-s-total">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Assigned now</p>
+                    <h2 id="hi-s-assigned">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Under repair</p>
+                    <h2 id="hi-s-repair">0</h2>
+                </div>
+                <div class="stat-card">
+                    <p>Repairs, all time</p>
+                    <h2 id="hi-s-repairs">0</h2>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="toolbar">
+                    <div class="field grow">
+                        <label for="hi-search">Search</label>
+                        <input type="text" id="hi-search" placeholder="Device, serial, brand, or a person's username">
+                    </div>
+
+                    <div class="field">
+                        <label for="hi-status">Status</label>
+                        <select id="hi-status">
+                            <option value="">All statuses</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="hi-activity">Show</label>
+                        <select id="hi-activity">
+                            <option value="">All devices</option>
+                            <option value="assigned">Assigned now</option>
+                            <option value="repair">Under repair</option>
+                            <option value="repaired">Ever repaired</option>
+                            <option value="never">Never assigned</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="hi-sort">Sort by</label>
+                        <select id="hi-sort">
+                            <option value="name">Name (A–Z)</option>
+                            <option value="updated">Recently updated</option>
+                            <option value="assignments">Most assignments</option>
+                            <option value="repairs">Most repairs</option>
+                        </select>
+                    </div>
+
+                    <button class="btn" id="hi-clear">Clear</button>
+                </div>
+
+                <div class="toolbar">
+                    <button class="btn btn-sm" id="hi-expand">Expand all</button>
+                    <button class="btn btn-sm" id="hi-collapse">Collapse all</button>
+                    <span class="count" id="hi-count">0 devices</span>
+                </div>
+
+                <div class="timeline" id="hi-list"></div>
+            </div>
+        </section>
+
         <section id="panel-my-devices" class="hidden">
             <div class="panel-heading">
                 <div>
@@ -462,6 +539,7 @@
     <script src="/static/js/request-ui.js"></script>
     <script src="/static/js/device-ui.js"></script>
     <script src="/static/js/panels/devices.js"></script>
+    <script src="/static/js/panels/history.js"></script>
     <script src="/static/js/panels/my-devices.js"></script>
     <script src="/static/js/panels/requests.js"></script>
     <script src="/static/js/panels/approvals.js"></script>
@@ -471,6 +549,7 @@
         /* Each section: who can see it, and which panel script drives it. */
         const ROUTES = [
             { id: "all-devices", label: "All Devices", roles: ["admin"], panel: DevicesPanel },
+            { id: "history", label: "History", roles: ["admin"], panel: HistoryPanel },
             { id: "my-devices", label: "My Devices", roles: ["supervisor", "developer"], panel: MyDevicesPanel },
             { id: "view-requests", label: "Requests", roles: ["supervisor", "developer"], panel: RequestsPanel },
             { id: "approvals", label: "Approvals", roles: ["admin", "supervisor"], panel: ApprovalsPanel },

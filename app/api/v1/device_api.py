@@ -2,20 +2,26 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
     AddDeviceRequest,
     AllDevicesRequestsResponse,
+    Assignments,
     AvailableDevicesResponse,
+    DeviceInfo,
+    DevicesHistory,
+    HistorySummary,
     MakeDeviceRequest,
     MyDevicesResponse,
     ProcessDeviceRequest,
+    Repairs,
     SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
+    UserRef,
     _RequestApprovals,
 )
 from app.database.models import (
@@ -66,6 +72,13 @@ class DeviceAPI:
             endpoint=self.get_my_devices,
             methods=["GET"],
             response_model=list[MyDevicesResponse],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/history",
+            endpoint=self.get_all_devices_history,
+            methods=["GET"],
+            response_model=list[DevicesHistory],
             status_code=status.HTTP_200_OK,
         )
 
@@ -193,6 +206,99 @@ class DeviceAPI:
                 )
             )
         return resp_data
+
+    async def get_all_devices_history(
+        self,
+        user: GetCurrentUser,
+        session: DBSession,
+    ) -> list[DevicesHistory]:
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
+
+        devices = await session.scalars(
+            select(Device).options(
+                selectinload(Device.assignments).options(
+                    selectinload(DeviceAssignment.assigned_to_user),
+                    selectinload(DeviceAssignment.assigned_by_user),
+                ),
+                selectinload(Device.repairs)
+                .selectinload(DeviceRepair.request)
+                .selectinload(DevicesRequest.requester),
+            )
+        )
+        devices_history: list[DevicesHistory] = []
+
+        def _ref(u: User | None) -> UserRef | None:
+            return UserRef(id=u.id, username=u.username, role=u.role) if u else None
+
+        for d in devices:
+            device_info = DeviceInfo(
+                id=d.id,
+                name=d.name,
+                serial_no=d.serial_no,
+                brand=d.brand,
+                processor=d.processor,
+                ram_gb=d.ram_gb,
+                ssd_gb=d.ssd_gb,
+                hdd_gb=d.hdd_gb,
+                status=d.status,
+                condition=d.condition,
+                purchase_date=d.purchase_date,
+                purchase_price=d.purchase_price,
+                created_at=d.created_at,
+                updated_at=d.updated_at,
+            )
+
+            assignments = [
+                Assignments(
+                    id=a.id,
+                    request_id=a.request_id,
+                    assigned_to=_ref(a.assigned_to_user),  # type: ignore
+                    assigned_by=_ref(a.assigned_by_user),
+                    scheduled_at=a.scheduled_at,
+                    assigned_at=a.assigned_at,
+                    returned_at=a.returned_at,
+                    condition_on_issue=a.condition_on_issue,
+                    condition_on_return=a.condition_on_return,
+                )
+                for a in sorted(
+                    d.assignments, key=lambda a: a.scheduled_at, reverse=True
+                )
+            ]
+
+            repairs = [
+                Repairs(
+                    id=r.id,
+                    request_id=r.request_id,
+                    requested_by=_ref(r.request.requester),  # type: ignore
+                    issue=r.request.issue,
+                    note=r.note,
+                    status=r.status,
+                    requested_at=r.requested_at,
+                    scheduled_at=r.scheduled_at,
+                    completed_at=r.completed_at,
+                )
+                for r in sorted(d.repairs, key=lambda r: r.requested_at, reverse=True)
+            ]
+
+            history_summary = HistorySummary(
+                total_assignments=len(assignments),
+                total_repairs=len(repairs),
+                current_holder=next(
+                    (a.assigned_to for a in assignments if a.state == "active"), None
+                ),
+                under_repair=any(r.is_active for r in repairs),
+            )
+
+            devices_history.append(
+                DevicesHistory(
+                    device_info=device_info,
+                    summary=history_summary,
+                    repairs=repairs,
+                    assignments=assignments,
+                )
+            )
+        return devices_history
 
     async def _add_device_record(
         self,
