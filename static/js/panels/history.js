@@ -112,10 +112,9 @@ const HistoryPanel = (() => {
                 </div>
                 <div class="muted step-sub">
                     Purchased ${fmtDate(device.purchase_date)} for ${money(device.purchase_price)}
-                    · Issued ${fmtDate(device.issued_at)}
                 </div>
                 <div class="muted step-sub">
-                    Added ${fmtDate(device.created_at)} · Updated ${fmtDateTime(device.updated_at)}
+                    Added ${fmtDateTime(device.created_at)} · Updated ${fmtDateTime(device.updated_at)}
                 </div>
             </div>
         </div>`;
@@ -215,6 +214,7 @@ const HistoryPanel = (() => {
         const key = `v:${device.id}`;
         const open = forceOpen || tree.openNodes.has(key);
         const activeRepairs = repairs.filter(r => r.is_active).length;
+        const holderSince = assignments.find(a => a.state === "active")?.assigned_at;
 
         const groups = [
             assignments.length ? groupNode(
@@ -240,7 +240,8 @@ const HistoryPanel = (() => {
                 <span class="pill ${conditionTone(device.condition)}">${escapeHTML(pretty(device.condition))}</span>
                 ${summary.under_repair ? `<span class="pill warn">Under repair</span>` : ""}
                 ${summary.current_holder
-                    ? `<span class="muted">with</span> ${person(summary.current_holder)}`
+                    ? `<span class="muted">with</span> ${person(summary.current_holder)}` +
+                      (holderSince ? ` <span class="muted">since ${fmtDate(holderSince)}</span>` : "")
                     : ""}
                 <span class="tree-meta">${plural(summary.total_assignments, "assignment")} · ${plural(summary.total_repairs, "repair")}</span>
             </div>

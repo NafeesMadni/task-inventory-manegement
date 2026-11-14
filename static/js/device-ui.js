@@ -28,6 +28,12 @@ const DeviceUI = (() => {
         return "neutral";
     }
 
+    // When the device was added to the inventory (a full date + time).
+    // The API now returns created_at; issued_at is read only as a fallback while the backend rename rolls out.
+    function addedAt(device) {
+        return device.created_at ?? device.issued_at ?? null;
+    }
+
     // "16 GB RAM" "512 GB SSD" ... as small chips (empty values are skipped).
     function specChips(device) {
         return [
@@ -39,30 +45,36 @@ const DeviceUI = (() => {
 
     /* ---------- My devices ---------- */
 
-    let mine = null; // cached so the My Devices tab and the repair picker share one request
+    let mine = null;    // cached result, shared by the My Devices tab and the repair picker
+    let pending = null; // request in flight, so simultaneous callers share one call
 
     // The API returns [{ device_info, assigned_at, condition_on_issue }].
     // This flattens each item to { ...device_info, assigned_at, condition_on_issue }.
-    async function loadMine(force = false) {
-        if (mine && !force) return mine;
+    function loadMine(force = false) {
+        if (mine && !force) return Promise.resolve(mine);
+        if (pending && !force) return pending;
 
-        const response = await api(MY_DEVICES_PATH);
+        pending = (async () => {
+            const response = await api(MY_DEVICES_PATH);
 
-        if (!response) return []; // redirected to sign in
-        if (!response.ok) throw new Error("Unable to load your devices.");
+            if (!response) return []; // redirected to sign in
+            if (!response.ok) throw new Error("Unable to load your devices.");
 
-        mine = (await response.json()).map(item => ({
-            ...item.device_info,
-            assigned_at: item.assigned_at,
-            condition_on_issue: item.condition_on_issue,
-        }));
+            mine = (await response.json()).map(item => ({
+                ...item.device_info,
+                assigned_at: item.assigned_at,
+                condition_on_issue: item.condition_on_issue,
+            }));
 
-        return mine;
+            return mine;
+        })().finally(() => { pending = null; });
+
+        return pending;
     }
 
     function invalidateMine() {
         mine = null;
     }
 
-    return { statusTone, conditionTone, specChips, loadMine, invalidateMine };
+    return { statusTone, conditionTone, specChips, addedAt, loadMine, invalidateMine };
 })();

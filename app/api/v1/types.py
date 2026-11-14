@@ -176,7 +176,7 @@ class AvailableDevicesResponse(BaseModel):
     hdd_gb: int
     processor: str
     brand: str
-    issued_at: datetime | None = None
+    created_at: datetime | None = None
 
     status: DeviceStatus
     condition: DeviceCondition

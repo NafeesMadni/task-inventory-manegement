@@ -4,7 +4,7 @@
 
 const DevicesPanel = (() => {
         const { $, api, escapeHTML, pretty, toast } = Portal;
-        const { statusTone, conditionTone } = DeviceUI;
+        const { statusTone, conditionTone, addedAt } = DeviceUI;
 
         let role = "pending";
         let allDevices = [];   // whole fleet, used for the stat cards
@@ -138,9 +138,9 @@ const DevicesPanel = (() => {
             return [...list].sort((a, b) => {
                 if (by === "brand") return text(a.brand, b.brand) || text(a.name, b.name);
                 if (by === "ram") return (b.ram_gb - a.ram_gb) || text(a.name, b.name);
-                if (by === "issued") {
-                    const ta = a.issued_at ? new Date(a.issued_at).getTime() : -Infinity;
-                    const tb = b.issued_at ? new Date(b.issued_at).getTime() : -Infinity;
+                if (by === "added") {
+                    const ta = addedAt(a) ? new Date(addedAt(a)).getTime() : -Infinity;
+                    const tb = addedAt(b) ? new Date(addedAt(b)).getTime() : -Infinity;
                     return tb - ta;
                 }
                 return text(a.name, b.name);
@@ -170,7 +170,11 @@ const DevicesPanel = (() => {
                     device.hdd_gb ? `${device.hdd_gb} GB HDD` : "",
                 ].filter(Boolean).map(s => `<span class="spec">${s}</span>`).join("");
 
-                const issued = formatDate(device.issued_at);
+                const added = addedAt(device);
+                const addedDate = formatDate(added);
+                const addedTime = addedDate
+                    ? new Date(added).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "";
 
                 return `
                 <tr>
@@ -184,7 +188,10 @@ const DevicesPanel = (() => {
                     </td>
                     <td><span class="pill ${statusTone(device.status)}">${escapeHTML(pretty(device.status))}</span></td>
                     <td><span class="pill ${conditionTone(device.condition)}">${escapeHTML(pretty(device.condition))}</span></td>
-                    <td class="${issued ? "" : "muted"}">${issued ?? "Not issued"}</td>
+                    <td title="${escapeHTML(added ? new Date(added).toLocaleString() : "")}">
+                        ${addedDate ?? "-"}
+                        ${addedTime ? `<div class="device-sub">${addedTime}</div>` : ""}
+                    </td>
                     <td class="muted">#${escapeHTML(device.id)}</td>
                 </tr>`;
             }).join("");

@@ -352,7 +352,7 @@ class DeviceAPI:
                 brand=device.brand,
                 status=device.status,
                 condition=device.condition,
-                issued_at=device.issued_at,
+                created_at=device.created_at,
             )
             for device in available_devices
         ]
@@ -386,7 +386,7 @@ class DeviceAPI:
                             brand=device.brand,
                             status=device.status,
                             condition=device.condition,
-                            issued_at=device.issued_at,
+                            created_at=device.created_at,
                         ),
                         assigned_at=da.assigned_at,
                         condition_on_issue=da.condition_on_issue,
