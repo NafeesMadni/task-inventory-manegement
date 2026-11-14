@@ -1,36 +1,41 @@
 /* =========================================================
    Device Portal – device history panel (admin only, mounted by devices.html)
-   Animated tree:  device > ( details | Assignments > holders | Repairs > repairs )
+   Main view: one clean row per device.
+   Click a row: a slide-over panel with Overview / Assignments / Repairs (all times shown there).
+   Styles: static/css/history.css
    ========================================================= */
 
 const HistoryPanel = (() => {
     const { $, api, escapeHTML, pretty } = Portal;
-    const { statusTone, conditionTone, specChips } = DeviceUI;
-    const { CHEV, plural } = TreeUI;
+    const { statusTone, conditionTone } = DeviceUI;
 
     // Route of the "all devices history" endpoint (relative to /api/v1).
     // Change it here if your router registers it under a different path.
     const DEVICES_HISTORY_PATH = "/device/history";
 
     let items = [];
-    let tree = null; // expand/collapse state, created in bindEvents
+    let activeId = null;        // device shown in the panel
+    let activeTab = "overview"; // overview | assignments | repairs
 
     /* ---------- Helpers ---------- */
 
-    function fmtDate(value) {
+    const valid = value => {
         const date = new Date(value);
-        return !value || Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString();
-    }
+        return value && !Number.isNaN(date.getTime()) ? date : null;
+    };
 
-    function fmtDateTime(value) {
-        const date = new Date(value);
-        return !value || Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
-    }
+    // "Nov 14, 2026" and "Nov 14, 2026, 2:15 PM"
+    const fmtDate = value => valid(value)?.toLocaleDateString(undefined, { dateStyle: "medium" }) ?? null;
+    const fmtDateTime = value =>
+        valid(value)?.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) ?? null;
+
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const initials = name => String(name || "?").trim().slice(0, 2).toUpperCase();
 
     function money(value) {
         const number = Number(value);
         return value == null || Number.isNaN(number)
-            ? "-"
+            ? null
             : number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
@@ -44,8 +49,18 @@ const HistoryPanel = (() => {
             (role ? ` <span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>` : "");
     }
 
+    // <dl> of label/value pairs; rows without a value are skipped. Values must already be escaped.
+    function kv(rows) {
+        const shown = rows.filter(([, value]) => value != null && value !== "");
+
+        return `<dl class="kv">${shown.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join("")}</dl>`;
+    }
+
+    const active = item => item.assignments.find(a => a.state === "active");
+
     function message(text, isError = false) {
-        $("hi-list").innerHTML = `<div class="empty ${isError ? "error" : ""}">${escapeHTML(text)}</div>`;
+        $("hi-table").innerHTML =
+            `<tr><td colspan="6" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
     }
 
     /* ---------- Data ---------- */
@@ -76,6 +91,9 @@ const HistoryPanel = (() => {
             renderStats();
             render();
 
+            // Keep an open panel in step with the refreshed data.
+            if ($("hi-drawer").open) renderDrawer();
+
         } catch (error) {
             message(error.message, true);
         }
@@ -99,162 +117,7 @@ const HistoryPanel = (() => {
         $("hi-s-repairs").textContent = items.reduce((n, i) => n + i.summary.total_repairs, 0);
     }
 
-    /* ---------- Tree pieces ---------- */
-
-    function infoLeaf(device) {
-        return `
-        <div class="tree-leaf multi branch" style="--i:0">
-            <span class="leaf-dot info"></span>
-            <div class="leaf-detail">
-                <div class="spec-list">${specChips(device)}</div>
-                <div class="muted step-sub" style="margin-top:8px">
-                    ${escapeHTML(device.processor)} · Serial ${escapeHTML(device.serial_no)}
-                </div>
-                <div class="muted step-sub">
-                    Purchased ${fmtDate(device.purchase_date)} for ${money(device.purchase_price)}
-                </div>
-                <div class="muted step-sub">
-                    Added ${fmtDateTime(device.created_at)} · Updated ${fmtDateTime(device.updated_at)}
-                </div>
-            </div>
-        </div>`;
-    }
-
-    function assignmentLeaf(a, index) {
-        const state = a.state || (a.returned_at ? "returned" : a.assigned_at ? "active" : "scheduled");
-
-        const dot = state === "active" ? "active" : state === "scheduled" ? "info" : "ended";
-        const pill = state === "active" ? `<span class="session-pill active">Active</span>`
-            : state === "scheduled" ? `<span class="pill info">Scheduled</span>`
-            : `<span class="pill">Returned</span>`;
-
-        const dates = [
-            `Scheduled ${fmtDate(a.scheduled_at)}`,
-            a.assigned_at ? `Handed over ${fmtDate(a.assigned_at)}` : "",
-            a.returned_at ? `Returned ${fmtDate(a.returned_at)}` : "",
-        ].filter(Boolean).join(" · ");
-
-        const conditions = [
-            a.condition_on_issue ? `Condition on issue: ${pretty(a.condition_on_issue)}` : "",
-            a.condition_on_return ? `on return: ${pretty(a.condition_on_return)}` : "",
-        ].filter(Boolean).join(" · ");
-
-        return `
-        <div class="tree-leaf multi branch" style="--i:${index}">
-            <span class="leaf-dot ${dot}"></span>
-            <div class="step">
-                <div class="step-line">
-                    ${person(a.assigned_to)} ${pill}
-                    <span class="muted">· ${a.request_id ? `request #${escapeHTML(a.request_id)}` : "assigned directly"}</span>
-                </div>
-                <div class="muted step-sub">${escapeHTML(dates)}</div>
-                ${a.assigned_by || conditions ? `
-                <div class="muted step-sub">
-                    ${a.assigned_by ? `Assigned by ${person(a.assigned_by)}` : ""}
-                    ${a.assigned_by && conditions ? " · " : ""}${escapeHTML(conditions)}
-                </div>` : ""}
-            </div>
-        </div>`;
-    }
-
-    function repairTone(repair) {
-        const v = pretty(repair.status);
-
-        if (repair.is_active) return "warn";
-        if (v.includes("complet")) return "ok";
-        if (v.includes("cancel") || v.includes("reject")) return "bad";
-        return "neutral";
-    }
-
-    function repairLeaf(r, index) {
-        const tone = repairTone(r);
-
-        const dates = [
-            `Requested ${fmtDate(r.requested_at)}`,
-            `Scheduled ${fmtDate(r.scheduled_at)}`,
-            r.completed_at ? `Completed ${fmtDate(r.completed_at)}` : "",
-        ].filter(Boolean).join(" · ");
-
-        return `
-        <div class="tree-leaf multi branch" style="--i:${index}">
-            <span class="leaf-dot ${tone}"></span>
-            <div class="step">
-                <div class="step-line">
-                    ${person(r.requested_by)}
-                    <span class="pill ${tone === "neutral" ? "" : tone}">${escapeHTML(pretty(r.status))}</span>
-                    <span class="muted">· request #${escapeHTML(r.request_id)}</span>
-                </div>
-                <div class="muted step-sub">${escapeHTML(dates)}</div>
-                ${r.issue ? `<div class="muted remark">“${escapeHTML(r.issue)}”</div>` : ""}
-                ${r.note ? `<div class="muted step-sub">Note: ${escapeHTML(r.note)}</div>` : ""}
-            </div>
-        </div>`;
-    }
-
-    // A collapsible group ("Assignments" / "Repairs") inside a device.
-    function groupNode(key, index, title, badge, leaves) {
-        const open = tree.openNodes.has(key);
-
-        return `
-        <div class="tree-node node-user branch${open ? " open" : ""}" data-key="${escapeHTML(key)}" style="--i:${index}">
-            <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}">
-                ${CHEV}
-                <span class="device-name">${escapeHTML(title)}</span>
-                ${badge}
-            </div>
-            <div class="tree-children">
-                <div class="tree-inner">${leaves}</div>
-            </div>
-        </div>`;
-    }
-
-    function deviceNode(item, forceOpen) {
-        const { device_info: device, summary, assignments, repairs } = item;
-
-        const key = `v:${device.id}`;
-        const open = forceOpen || tree.openNodes.has(key);
-        const activeRepairs = repairs.filter(r => r.is_active).length;
-        const holderSince = assignments.find(a => a.state === "active")?.assigned_at;
-
-        const groups = [
-            assignments.length ? groupNode(
-                `a:${device.id}`, 1, "Assignments",
-                `<span class="pill">${assignments.length}</span>` +
-                (summary.current_holder ? `<span class="session-pill active">In use</span>` : ""),
-                assignments.map((a, i) => assignmentLeaf(a, i)).join("")) : "",
-
-            repairs.length ? groupNode(
-                `r:${device.id}`, assignments.length ? 2 : 1, "Repairs",
-                `<span class="pill">${repairs.length}</span>` +
-                (activeRepairs ? `<span class="pill warn">${activeRepairs} active</span>` : ""),
-                repairs.map((r, i) => repairLeaf(r, i)).join("")) : "",
-        ].join("");
-
-        return `
-        <div class="tree-node node-day${open ? " open" : ""}" data-key="${escapeHTML(key)}">
-            <div class="tree-row" role="button" tabindex="0" aria-expanded="${open}" style="flex-wrap:wrap;row-gap:6px">
-                ${CHEV}
-                <span class="device-name">${escapeHTML(device.name)}</span>
-                <span class="device-sub" style="margin:0">${escapeHTML(device.brand)} · #${escapeHTML(device.id)}</span>
-                <span class="pill ${statusTone(device.status)}">${escapeHTML(pretty(device.status))}</span>
-                <span class="pill ${conditionTone(device.condition)}">${escapeHTML(pretty(device.condition))}</span>
-                ${summary.under_repair ? `<span class="pill warn">Under repair</span>` : ""}
-                ${summary.current_holder
-                    ? `<span class="muted">with</span> ${person(summary.current_holder)}` +
-                      (holderSince ? ` <span class="muted">since ${fmtDate(holderSince)}</span>` : "")
-                    : ""}
-                <span class="tree-meta">${plural(summary.total_assignments, "assignment")} · ${plural(summary.total_repairs, "repair")}</span>
-            </div>
-            <div class="tree-children">
-                <div class="tree-inner">
-                    ${infoLeaf(device)}
-                    ${groups}
-                </div>
-            </div>
-        </div>`;
-    }
-
-    /* ---------- Render ---------- */
+    /* ---------- Main view: one row per device ---------- */
 
     function render() {
         const search = $("hi-search").value.trim().toLowerCase();
@@ -298,9 +161,209 @@ const HistoryPanel = (() => {
             return;
         }
 
-        // While searching, open each matching device so the hit is visible (groups stay as you left them).
-        $("hi-list").innerHTML = visible.map(item => deviceNode(item, Boolean(search))).join("");
+        $("hi-table").innerHTML = visible.map(({ device_info: d, summary: s, repairs }) => {
+            const activeRepairs = repairs.filter(r => r.is_active).length;
+
+            return `
+            <tr class="hist-row" data-id="${escapeHTML(d.id)}" tabindex="0">
+                <td>
+                    <div class="device-name">${escapeHTML(d.name)}</div>
+                    <div class="device-sub">${escapeHTML(d.brand)} · #${escapeHTML(d.id)}</div>
+                </td>
+                <td>
+                    <span class="pill ${statusTone(d.status)}">${escapeHTML(pretty(d.status))}</span>
+                </td>
+                <td>${s.current_holder ? person(s.current_holder) : `<span class="muted">Not assigned</span>`}</td>
+                <td class="hist-num">${s.total_assignments}</td>
+                <td class="hist-num">
+                    ${s.total_repairs}
+                    ${activeRepairs ? `<span class="pill warn" style="margin-left:6px">${activeRepairs} active</span>` : ""}
+                </td>
+                <td class="hist-arrow" aria-hidden="true">&rsaquo;</td>
+            </tr>`;
+        }).join("");
     }
+
+    /* ---------- Detail panel ---------- */
+
+    function overviewHTML(item) {
+        const { device_info: d, summary: s } = item;
+        const holder = s.current_holder;
+        const current = active(item);
+        const since = fmtDateTime(current?.assigned_at || current?.scheduled_at);
+
+        const holderCard = holder
+            ? `<div class="holder-main">
+                   <span class="avatar">${escapeHTML(initials(holder.username))}</span>
+                   <div>
+                       <div class="holder-name">${person(holder)}</div>
+                       ${since ? `<div class="holder-sub">Holding it since ${escapeHTML(since)}</div>` : ""}
+                   </div>
+               </div>`
+            : `<div class="holder-sub">Not assigned to anyone right now.</div>`;
+
+        return `
+        <section class="holder-card ${holder ? "" : "empty"}">
+            <p class="hist-label">Current holder</p>
+            ${holderCard}
+        </section>
+
+        <div class="stats">
+            <div class="stat-card"><p>Total assignments</p><h2>${s.total_assignments}</h2></div>
+            <div class="stat-card"><p>Total repairs</p><h2>${s.total_repairs}</h2></div>
+        </div>
+
+        <section>
+            <h3 class="drawer-h">Device details</h3>
+            ${kv([
+                ["Processor", escapeHTML(d.processor)],
+                ["Memory (RAM)", d.ram_gb ? `${d.ram_gb} GB` : null],
+                ["SSD", d.ssd_gb ? `${d.ssd_gb} GB` : null],
+                ["HDD", d.hdd_gb ? `${d.hdd_gb} GB` : null],
+                ["Serial number", escapeHTML(d.serial_no)],
+                ["Purchased", fmtDate(d.purchase_date)],
+                ["Purchase price", money(d.purchase_price)],
+                ["Added to inventory", fmtDateTime(d.created_at)],
+                ["Last updated", fmtDateTime(d.updated_at)],
+            ])}
+        </section>`;
+    }
+
+    function assignmentsHTML(item) {
+        if (!item.assignments.length) return `<div class="empty">This device hasn't been assigned to anyone yet.</div>`;
+
+        return item.assignments.map((a, i) => {
+            const state = a.state || (a.returned_at ? "returned" : a.assigned_at ? "active" : "scheduled");
+            const pill = state === "active" ? `<span class="session-pill active">Active</span>`
+                : state === "scheduled" ? `<span class="pill info">Scheduled</span>`
+                : `<span class="pill">Returned</span>`;
+
+            return `
+            <article class="hist-item" style="--i:${i}">
+                <div class="hist-top">
+                    <div><span class="hist-label">Assigned to</span> ${person(a.assigned_to)}</div>
+                    ${pill}
+                </div>
+                ${kv([
+                    ["Scheduled", fmtDateTime(a.scheduled_at)],
+                    ["Handed over", fmtDateTime(a.assigned_at)],
+                    ["Returned", fmtDateTime(a.returned_at)],
+                    ["Assigned by", a.assigned_by ? person(a.assigned_by) : null],
+                    ["Source", a.request_id ? `Request #${escapeHTML(a.request_id)}` : "Assigned directly, no request"],
+                    ["Condition on issue", a.condition_on_issue ? escapeHTML(pretty(a.condition_on_issue)) : null],
+                    ["Condition on return", a.condition_on_return ? escapeHTML(pretty(a.condition_on_return)) : null],
+                ])}
+            </article>`;
+        }).join("");
+    }
+
+    function repairTone(repair) {
+        const v = pretty(repair.status);
+
+        if (repair.is_active) return "warn";
+        if (v.includes("complet")) return "ok";
+        if (v.includes("cancel") || v.includes("reject")) return "bad";
+        return "";
+    }
+
+    function repairsHTML(item) {
+        if (!item.repairs.length) return `<div class="empty">No repairs have been recorded for this device.</div>`;
+
+        return item.repairs.map((r, i) => `
+            <article class="hist-item" style="--i:${i}">
+                <div class="hist-top">
+                    <div><span class="hist-label">Reported by</span> ${person(r.requested_by)}</div>
+                    <span class="pill ${repairTone(r)}">${escapeHTML(pretty(r.status))}</span>
+                </div>
+                ${kv([
+                    ["Request", `#${escapeHTML(r.request_id)}`],
+                    ["Requested", fmtDateTime(r.requested_at)],
+                    ["Scheduled", fmtDateTime(r.scheduled_at)],
+                    ["Completed", fmtDateTime(r.completed_at)],
+                    ["Reported issue", r.issue ? `“${escapeHTML(r.issue)}”` : null],
+                    ["Admin note", r.note ? escapeHTML(r.note) : null],
+                ])}
+            </article>`).join("");
+    }
+
+    function drawerBodyHTML(item) {
+        if (activeTab === "assignments") return assignmentsHTML(item);
+        if (activeTab === "repairs") return repairsHTML(item);
+        return overviewHTML(item);
+    }
+
+    // Header (title, pills, tabs) plus the body of the selected tab.
+    function renderDrawer() {
+        const item = items.find(i => i.device_info.id === activeId);
+
+        if (!item) {
+            closeDrawer();
+            return;
+        }
+
+        const { device_info: d, summary: s } = item;
+        const tab = (id, label) =>
+            `<button type="button" data-tab="${id}" class="${activeTab === id ? "active" : ""}">${label}</button>`;
+
+        $("hi-drawer").innerHTML = `
+            <div class="drawer-head">
+                <div class="drawer-title-row">
+                    <div>
+                        <h2 class="drawer-title">${escapeHTML(d.name)}</h2>
+                        <p class="drawer-sub">${escapeHTML(d.brand)} · #${escapeHTML(d.id)} · Serial ${escapeHTML(d.serial_no)}</p>
+                    </div>
+                    <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+                </div>
+                <div class="drawer-pills">
+                    <span class="pill ${statusTone(d.status)}">${escapeHTML(pretty(d.status))}</span>
+                    <span class="pill ${conditionTone(d.condition)}">${escapeHTML(pretty(d.condition))}</span>
+                </div>
+                <div class="segmented drawer-tabs">
+                    ${tab("overview", "Overview")}
+                    ${tab("assignments", `Assignments (${s.total_assignments})`)}
+                    ${tab("repairs", `Repairs (${s.total_repairs})`)}
+                </div>
+            </div>
+            <div class="drawer-body" id="hi-drawer-body">${drawerBodyHTML(item)}</div>`;
+    }
+
+    // Switching tabs only swaps the body, so the header and scroll position stay put.
+    function showTab(tab) {
+        const item = items.find(i => i.device_info.id === activeId);
+        if (!item) return;
+
+        activeTab = tab;
+
+        document.querySelectorAll("#hi-drawer .drawer-tabs button").forEach(btn =>
+            btn.classList.toggle("active", btn.dataset.tab === tab));
+
+        $("hi-drawer-body").innerHTML = drawerBodyHTML(item);
+        $("hi-drawer").scrollTop = 0;
+    }
+
+    function openDrawer(id) {
+        activeId = id;
+        activeTab = "overview";
+        renderDrawer();
+
+        const drawer = $("hi-drawer");
+        drawer.classList.remove("closing");
+        if (!drawer.open) drawer.showModal();
+    }
+
+    function closeDrawer() {
+        const drawer = $("hi-drawer");
+        if (!drawer.open) return;
+
+        // Let the slide-out animation play before the dialog actually closes.
+        drawer.classList.add("closing");
+        setTimeout(() => {
+            drawer.classList.remove("closing");
+            drawer.close();
+        }, 200);
+    }
+
+    /* ---------- Events ---------- */
 
     function bindEvents() {
         $("hi-refresh").addEventListener("click", load);
@@ -316,10 +379,39 @@ const HistoryPanel = (() => {
             render();
         });
 
-        tree = TreeUI.create($("hi-list"));
+        // Click (or Enter / Space) on a device row opens its panel.
+        $("hi-table").addEventListener("click", event => {
+            const row = event.target.closest("tr[data-id]");
+            if (row) openDrawer(Number(row.dataset.id));
+        });
 
-        $("hi-expand").addEventListener("click", () => tree.setAll(true));
-        $("hi-collapse").addEventListener("click", () => tree.setAll(false));
+        $("hi-table").addEventListener("keydown", event => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+
+            const row = event.target.closest("tr[data-id]");
+            if (!row) return;
+
+            event.preventDefault();
+            openDrawer(Number(row.dataset.id));
+        });
+
+        const drawer = $("hi-drawer");
+
+        drawer.addEventListener("click", event => {
+            if (event.target === drawer || event.target.closest("[data-close]")) { // backdrop or ×
+                closeDrawer();
+                return;
+            }
+
+            const tab = event.target.closest("[data-tab]");
+            if (tab) showTab(tab.dataset.tab);
+        });
+
+        // Esc: use our animated close instead of the instant default.
+        drawer.addEventListener("cancel", event => {
+            event.preventDefault();
+            closeDrawer();
+        });
     }
 
     // Called once, the first time the panel is shown.

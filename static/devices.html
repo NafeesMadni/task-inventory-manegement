@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Devices | Device Portal</title>
     <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/history.css">
 </head>
 
 <body>
@@ -89,33 +90,21 @@
                 </div>
             </div>
         </section>
-        <section id="panel-history" class="hidden">
+<section id="panel-history" class="hidden">
             <div class="panel-heading">
                 <div>
                     <p class="eyebrow">Inventory</p>
                     <h1>Device History <span class="role-badge" data-role-badge></span></h1>
-                    <p class="subtitle">Who has had each device and every repair it has been through.</p>
+                    <p class="subtitle">Select a device to see its holder, assignments and repairs.</p>
                 </div>
                 <button class="btn btn-primary" id="hi-refresh">Refresh</button>
             </div>
 
             <div class="stats">
-                <div class="stat-card">
-                    <p>Devices</p>
-                    <h2 id="hi-s-total">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Assigned now</p>
-                    <h2 id="hi-s-assigned">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Under repair</p>
-                    <h2 id="hi-s-repair">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Repairs, all time</p>
-                    <h2 id="hi-s-repairs">0</h2>
-                </div>
+                <div class="stat-card"><p>Devices</p><h2 id="hi-s-total">0</h2></div>
+                <div class="stat-card"><p>Assigned now</p><h2 id="hi-s-assigned">0</h2></div>
+                <div class="stat-card"><p>Under repair</p><h2 id="hi-s-repair">0</h2></div>
+                <div class="stat-card"><p>Repairs, all time</p><h2 id="hi-s-repairs">0</h2></div>
             </div>
 
             <div class="card">
@@ -154,16 +143,28 @@
                     </div>
 
                     <button class="btn" id="hi-clear">Clear</button>
-                </div>
-
-                <div class="toolbar">
-                    <button class="btn btn-sm" id="hi-expand">Expand all</button>
-                    <button class="btn btn-sm" id="hi-collapse">Collapse all</button>
                     <span class="count" id="hi-count">0 devices</span>
                 </div>
 
-                <div class="timeline" id="hi-list"></div>
+                <div class="table-wrapper">
+                    <table class="hist-table">
+                        <thead>
+                            <tr>
+                                <th>Device</th>
+                                <th>Status</th>
+                                <th>Current holder</th>
+                                <th class="hist-num">Assignments</th>
+                                <th class="hist-num">Repairs</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="hi-table"></tbody>
+                    </table>
+                </div>
             </div>
+
+            <!-- Slide-over panel with the selected device's details (filled by history.js) -->
+            <dialog class="drawer" id="hi-drawer"></dialog>
         </section>
 
         <section id="panel-my-devices" class="hidden">
@@ -171,8 +172,7 @@
                 <div>
                     <p class="eyebrow">Devices</p>
                     <h1>My Devices <span class="role-badge" data-role-badge></span></h1>
-                    <p class="subtitle">Devices currently assigned to you. Something wrong with one? Request a repair.
-                    </p>
+                    <p class="subtitle">Devices currently assigned to you. Something wrong with one? Request a repair.</p>
                 </div>
                 <button class="btn btn-primary" id="md-refresh">Refresh</button>
             </div>
@@ -208,8 +208,7 @@
                 <div>
                     <p class="eyebrow">Devices</p>
                     <h1>Device Requests <span class="role-badge" data-role-badge></span></h1>
-                    <p class="subtitle" id="rq-subtitle">Ask for a new or existing device, or request a repair, and
-                        follow each approval.</p>
+                    <p class="subtitle" id="rq-subtitle">Ask for a new or existing device, or request a repair, and follow each approval.</p>
                 </div>
                 <div class="heading-actions">
                     <button class="btn" id="rq-refresh">Refresh</button>
@@ -218,22 +217,10 @@
             </div>
 
             <div class="stats">
-                <div class="stat-card">
-                    <p>Total requests</p>
-                    <h2 id="rq-s-total">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Pending</p>
-                    <h2 id="rq-s-pending">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Approved</p>
-                    <h2 id="rq-s-approved">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Rejected</p>
-                    <h2 id="rq-s-rejected">0</h2>
-                </div>
+                <div class="stat-card"><p>Total requests</p><h2 id="rq-s-total">0</h2></div>
+                <div class="stat-card"><p>Pending</p><h2 id="rq-s-pending">0</h2></div>
+                <div class="stat-card"><p>Approved</p><h2 id="rq-s-approved">0</h2></div>
+                <div class="stat-card"><p>Rejected</p><h2 id="rq-s-rejected">0</h2></div>
             </div>
 
             <div class="card">
@@ -272,7 +259,7 @@
                 </div>
             </div>
         </section>
-        <section id="panel-approvals" class="hidden">
+<section id="panel-approvals" class="hidden">
             <div class="panel-heading">
                 <div>
                     <p class="eyebrow">Devices</p>
@@ -283,22 +270,10 @@
             </div>
 
             <div class="stats">
-                <div class="stat-card">
-                    <p>Waiting for you</p>
-                    <h2 id="ap-s-awaiting">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>In progress elsewhere</p>
-                    <h2 id="ap-s-progress">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Approved</p>
-                    <h2 id="ap-s-approved">0</h2>
-                </div>
-                <div class="stat-card">
-                    <p>Rejected</p>
-                    <h2 id="ap-s-rejected">0</h2>
-                </div>
+                <div class="stat-card"><p>Waiting for you</p><h2 id="ap-s-awaiting">0</h2></div>
+                <div class="stat-card"><p>In progress elsewhere</p><h2 id="ap-s-progress">0</h2></div>
+                <div class="stat-card"><p>Approved</p><h2 id="ap-s-approved">0</h2></div>
+                <div class="stat-card"><p>Rejected</p><h2 id="ap-s-rejected">0</h2></div>
             </div>
 
             <div class="card">
@@ -340,8 +315,7 @@
             <div class="form-row">
                 <div class="form-group">
                     <label for="add-name">Device name</label>
-                    <input type="text" id="add-name" name="name" placeholder="e.g. ThinkPad T14" maxlength="150"
-                        required>
+                    <input type="text" id="add-name" name="name" placeholder="e.g. ThinkPad T14" maxlength="150" required>
                 </div>
                 <div class="form-group">
                     <label for="add-brand">Brand</label>
@@ -356,8 +330,7 @@
                 </div>
                 <div class="form-group">
                     <label for="add-processor">Processor</label>
-                    <input type="text" id="add-processor" name="processor" placeholder="e.g. Intel Core i7-1355U"
-                        required>
+                    <input type="text" id="add-processor" name="processor" placeholder="e.g. Intel Core i7-1355U" required>
                 </div>
             </div>
 
@@ -383,8 +356,7 @@
                 </div>
                 <div class="form-group">
                     <label for="add-price">Purchase price</label>
-                    <input type="number" id="add-price" name="purchase_price" min="0" step="0.01" placeholder="0.00"
-                        required>
+                    <input type="number" id="add-price" name="purchase_price" min="0" step="0.01" placeholder="0.00" required>
                 </div>
             </div>
 
@@ -396,7 +368,7 @@
             </div>
         </form>
     </dialog>
-    <dialog class="modal" id="req-dialog">
+<dialog class="modal" id="req-dialog">
         <form id="req-form" novalidate>
             <div class="modal-head">
                 <div>
@@ -448,7 +420,7 @@
             </div>
         </form>
     </dialog>
-    <dialog class="modal" id="decision-dialog">
+<dialog class="modal" id="decision-dialog">
         <form id="decision-form" novalidate>
             <div class="modal-head">
                 <div>
