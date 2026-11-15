@@ -1,8 +1,8 @@
-"""remove ck_device_request_type_device constraint from devices_requests tabe
+"""init db
 
-Revision ID: 326cc2d48d39
+Revision ID: 1678ca5f970a
 Revises: 
-Create Date: 2026-11-13 23:33:29.571339
+Create Date: 2026-11-15 14:12:31.143730
 
 """
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '326cc2d48d39'
+revision: str = '1678ca5f970a'
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -33,7 +33,6 @@ def upgrade() -> None:
     sa.Column('purchase_price', sa.Numeric(precision=12, scale=2), nullable=True),
     sa.Column('status', sa.Enum('available', 'reserved', 'assigned', 'repair', 'retired', name='device_status', native_enum=False), nullable=False),
     sa.Column('condition', sa.Enum('new', 'good', 'fair', 'poor', name='device_condition', native_enum=False), nullable=False),
-    sa.Column('issued_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.CheckConstraint("condition IN ('new', 'good', 'fair', 'poor')", name='ck_devices_condition'),

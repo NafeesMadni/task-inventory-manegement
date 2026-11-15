@@ -5,6 +5,7 @@
 const DevicesPanel = (() => {
         const { $, api, escapeHTML, pretty, toast } = Portal;
         const { statusTone, conditionTone, addedAt } = DeviceUI;
+        let addVoice = null; // voice input inside the Add device dialog
 
         let role = "pending";
         let allDevices = [];   // whole fleet, used for the stat cards
@@ -29,6 +30,8 @@ const DevicesPanel = (() => {
             $("dv-refresh").addEventListener("click", refresh);
 
             // Add device dialog
+            addVoice = VoiceUI.mount($("add-voice"), { form: $("add-form"), actionLabel: "add the device" });
+
             $("add-btn").addEventListener("click", openAddDialog);
             $("add-close").addEventListener("click", closeAddDialog);
             $("add-cancel").addEventListener("click", closeAddDialog);
@@ -206,6 +209,7 @@ const DevicesPanel = (() => {
 
         function openAddDialog() {
             $("add-form").reset();
+            addVoice.reset();
             $("add-message").className = "message";
             $("add-date").max = localISO(new Date()); // a purchase can't be in the future
             $("add-submit").disabled = false;
@@ -215,6 +219,7 @@ const DevicesPanel = (() => {
         }
 
         function closeAddDialog() {
+            addVoice.reset(); // stops a recording that is still running
             $("add-dialog").close();
         }
 
