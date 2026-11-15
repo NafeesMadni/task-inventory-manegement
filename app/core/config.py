@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     TURNSTILE_SECRET_KEY: str = Field(alias="TURNSTILE_SECRET_KEY")
     SITEVERIFY_URL: str = Field(alias="SITEVERIFY_URL")
 
+    OPENROUTER_API_KEY: str = Field(alias="OPENROUTER_API_KEY")
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _use_psycopg_driver(cls, value: str) -> str:

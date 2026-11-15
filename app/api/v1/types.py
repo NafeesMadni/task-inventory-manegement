@@ -279,3 +279,43 @@ class SearchOptionsResponse(BaseModel):
 class SearchDevicesRequest(BaseModel):
     status: DeviceStatus | None = None
     condition: DeviceCondition | None = None
+
+
+# -----------------------------
+# TRANSCRIBE ENDPOINT MODELS
+# -----------------------------
+class ProcessStartResponse(BaseModel):
+    task_id: str
+    message: str = "Process started..."
+
+
+class VoiceFields(BaseModel):
+    name: str | None = None
+    brand: str | None = None
+    serial_no: str | None = None
+    processor: str | None = None
+    ram_gb: int | None = None
+    ssd_gb: int | None = None
+    hdd_gb: int | None = None
+    purchase_date: str | None = None  # "YYYY-MM-DD"
+    purchase_price: float | None = None
+
+
+class ReviewNote(BaseModel):
+    field: str
+    reason: str
+
+
+class VoiceDeviceRecord(BaseModel):
+    status: Literal["complete", "incomplete", "not_a_device_description"]
+    fields: VoiceFields
+    missing_fields: list[str] = []
+    needs_review: list[ReviewNote] = []
+    follow_up_question: str | None = None
+
+
+class CeleryTranscribeResult(BaseModel):
+    task_id: str | None = None
+    status: str = "Sucess"
+    result: VoiceDeviceRecord | None = None
+    developer_error: str | None = None

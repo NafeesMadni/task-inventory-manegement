@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from redis_fastapi import FastAPIRedis
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.v1 import DeviceAPI, UserAPI
+from app.api.v1 import DeviceAPI, TranscribeAPI, UserAPI
 from app.core.config import get_settings
 from app.database.db import get_sessionmaker
 from app.database.models.seed import create_initial_admin
@@ -43,6 +43,7 @@ async def health():
 
 app.include_router(UserAPI().router, prefix="/api/v1")
 app.include_router(DeviceAPI().router, prefix="/api/v1")
+app.include_router(TranscribeAPI().router, prefix="/api/v1")
 
 
 # Frontend pages
