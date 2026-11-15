@@ -256,3 +256,48 @@ class EmailManager:
         subject = f"{self.config.app_name} - Device Schedule Reminder #{request_id}"
 
         await self._send(to_email, subject, body)
+
+    async def send_device_request_fulfilled(
+        self,
+        to_email: str,
+        requester_username: str,
+        request_id: int,
+        request_type: DeviceRequestType,
+        device_name: str,
+        device_serial: str | None,
+        processed_at: datetime,
+    ) -> None:
+
+        messages = {
+            DeviceRequestType.NEW: (
+                "New Device Request Fulfilled",
+                "Your new device handover has been recorded successfully.",
+            ),
+            DeviceRequestType.EXISTING: (
+                "Device Assignment Completed",
+                "Your requested device has been assigned successfully.",
+            ),
+            DeviceRequestType.REPAIR: (
+                "Device Repair Completed",
+                "Your device repair has been marked as completed.",
+            ),
+        }
+
+        title, message = messages[request_type]
+
+        template = self.template_env.get_template("device_request_fulfilled.html")
+
+        body = template.render(
+            app_name=self.config.app_name,
+            title=title,
+            message=message,
+            requester_username=requester_username,
+            request_id=request_id,
+            device_name=device_name,
+            device_serial=device_serial,
+            processed_at=processed_at.strftime("%d %B %Y, %I:%M %p"),
+        )
+
+        subject = f"{self.config.app_name} - {title} #{request_id}"
+
+        await self._send(to_email, subject, body)

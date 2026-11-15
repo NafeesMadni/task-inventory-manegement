@@ -5,6 +5,7 @@
 const RequestsPanel = (() => {
         const { $, api, escapeHTML, pretty, toast, errorMessage } = Portal;
         const { formatDate, formatDateTime, statusKind, typeTone, renderApprovals, STATUS_TONE } = RequestUI;
+        const { conditionTone, specChips, loadMine, invalidateMine } = DeviceUI;
 
         // Values sent to the API for DeviceRequestType. Adjust here if your enum values differ.
         const REQUEST_TYPES = { existing: "existing", new: "new", repair: "repair" };
@@ -30,6 +31,8 @@ const RequestsPanel = (() => {
         let availableLoaded = false;
         let selectedType = "existing";
         let selectedDevice = "";
+        let myDevices = [];
+        let selectedRepair = "";
 
         /* ---------- Helpers ---------- */
 
@@ -52,7 +55,7 @@ const RequestsPanel = (() => {
             });
 
             // Dialog
-            $("new-btn").addEventListener("click", openDialog);
+            $("new-btn").addEventListener("click", () => openDialog());
             $("req-close").addEventListener("click", closeDialog);
             $("req-cancel").addEventListener("click", closeDialog);
             $("req-form").addEventListener("submit", submitRequest);
@@ -68,6 +71,10 @@ const RequestsPanel = (() => {
             $("picker-search").addEventListener("input", renderPicker);
             $("picker").addEventListener("change", event => {
                 if (event.target.name === "device") selectedDevice = event.target.value;
+            });
+
+            $("repair-picker").addEventListener("change", event => {
+                if (event.target.name === "repair_device") selectedRepair = event.target.value;
             });
         }
 
@@ -164,19 +171,21 @@ const RequestsPanel = (() => {
 
         /* ---------- New request dialog ---------- */
 
-        function openDialog() {
+        // type: which tab to start on. presetRepair: a device id to preselect for repairs.
+        function openDialog(type = "existing", presetRepair = "") {
             $("req-form").reset();
             $("req-message").className = "message";
             $("req-submit").disabled = false;
             $("req-submit").textContent = "Send request";
             selectedDevice = "";
+            selectedRepair = presetRepair ? String(presetRepair) : "";
             $("picker-search").value = "";
 
             $("route-hint").textContent = role === "developer"
                 ? "Your request goes to your supervisor first, then to the admin for final approval."
                 : "Your request goes straight to the admin for approval.";
 
-            setType("existing");
+            setType(type);
             $("req-dialog").showModal();
         }
 
@@ -199,6 +208,7 @@ const RequestsPanel = (() => {
             $("req-message").className = "message";
 
             if (type === "existing") loadAvailable();
+            if (type === "repair") loadRepairDevices();
         }
 
         async function loadAvailable() {
@@ -252,11 +262,7 @@ const RequestsPanel = (() => {
             }
 
             $("picker").innerHTML = list.map(device => {
-                const specs = [
-                    device.ram_gb ? `${device.ram_gb} GB RAM` : "",
-                    device.ssd_gb ? `${device.ssd_gb} GB SSD` : "",
-                    device.hdd_gb ? `${device.hdd_gb} GB HDD` : "",
-                ].filter(Boolean).map(s => `<span class="spec">${s}</span>`).join("");
+                const specs = specChips(device);
 
                 return `
                 <label class="pick">
@@ -269,6 +275,40 @@ const RequestsPanel = (() => {
                     </div>
                 </label>`;
             }).join("");
+        }
+
+        // Repairs are only possible for devices assigned to the user, so list exactly those.
+        async function loadRepairDevices() {
+            $("repair-picker").innerHTML = `<div class="empty">Loading your devices...</div>`;
+
+            try {
+                myDevices = await loadMine();
+                renderRepairPicker();
+
+            } catch (error) {
+                $("repair-picker").innerHTML = `<div class="empty error">${escapeHTML(error.message)}</div>`;
+            }
+        }
+
+        function renderRepairPicker() {
+            if (!myDevices.length) {
+                $("repair-picker").innerHTML =
+                    `<div class="empty">No devices are assigned to you right now, so there is nothing to repair.</div>`;
+                return;
+            }
+
+            $("repair-picker").innerHTML = myDevices.map(device => `
+                <label class="pick">
+                    <input type="radio" name="repair_device" value="${escapeHTML(device.id)}"
+                        ${String(device.id) === String(selectedRepair) ? "checked" : ""}>
+                    <div>
+                        <div class="device-name">${escapeHTML(device.name)}
+                            <span class="pill ${conditionTone(device.condition)}" style="margin-left:6px">${escapeHTML(pretty(device.condition))}</span>
+                        </div>
+                        <div class="device-sub">${escapeHTML(device.brand)} · ${escapeHTML(device.processor)}</div>
+                        <div class="spec-list" style="margin-top:7px">${specChips(device)}</div>
+                    </div>
+                </label>`).join("");
         }
 
         function showDialogError(text) {
@@ -295,9 +335,8 @@ const RequestsPanel = (() => {
             }
 
             if (selectedType === "repair") {
-                const id = Number($("f-repair-id").value);
-                if (!Number.isInteger(id) || id < 1) return showDialogError("Please enter a valid device ID.");
-                payload.device_id = id;
+                if (!selectedRepair) return showDialogError("Please choose the device you want to repair.");
+                payload.device_id = Number(selectedRepair);
             }
 
             if (!issue) {
@@ -324,6 +363,7 @@ const RequestsPanel = (() => {
 
                 closeDialog();
                 availableLoaded = false; // availability may have changed
+                invalidateMine();        // so may the list of the user's own devices
                 toast(result.message || "Request sent.");
                 await loadRequests();
 
@@ -338,6 +378,11 @@ const RequestsPanel = (() => {
 
     
 
+    // Opens the dialog on the Repair tab with a device already chosen (used by "My Devices").
+    function openRepair(deviceId) {
+        openDialog("repair", deviceId);
+    }
+
     // Called once, the first time the panel is shown.
     async function mount(session) {
         role = session.role;
@@ -345,5 +390,5 @@ const RequestsPanel = (() => {
         await loadRequests();
     }
 
-    return { mount };
+    return { mount, openRepair };
 })();

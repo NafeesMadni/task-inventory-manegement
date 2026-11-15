@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Text, func, or_, text
+from sqlalchemy import DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.models.base import Base, enum_check_constraint, enum_column
@@ -23,13 +23,6 @@ class DevicesRequest(Base):
     __tablename__ = "devices_requests"
 
     __table_args__ = (
-        CheckConstraint(
-            or_(
-                text("type = 'new' AND device_id IS NULL"),
-                text("type IN ('existing', 'repair') AND device_id IS NOT NULL"),
-            ),
-            name="ck_device_request_type_device",
-        ),
         enum_check_constraint(DeviceRequestType, "type", "ck_devices_requests_type"),
         enum_check_constraint(
             DeviceRequestStatus, "status", "ck_devices_requests_status"

@@ -4,6 +4,7 @@
 
 const DevicesPanel = (() => {
         const { $, api, escapeHTML, pretty, toast } = Portal;
+        const { statusTone, conditionTone, addedAt } = DeviceUI;
 
         let role = "pending";
         let allDevices = [];   // whole fleet, used for the stat cards
@@ -15,23 +16,6 @@ const DevicesPanel = (() => {
         function formatDate(value) {
             const date = new Date(value);
             return !value || Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
-        }
-
-        function statusTone(value) {
-            const v = pretty(value);
-            if (v.includes("avail")) return "ok";
-            if (v.includes("reserv") || v.includes("assign") || v.includes("issue")) return "info";
-            if (v.includes("repair")) return "warn";
-            if (v.includes("retire") || v.includes("lost") || v.includes("damag")) return "bad";
-            return "neutral";
-        }
-
-        function conditionTone(value) {
-            const v = pretty(value);
-            if (v.includes("new") || v.includes("good") || v.includes("excellent")) return "ok";
-            if (v.includes("fair") || v.includes("used")) return "warn";
-            if (v.includes("poor") || v.includes("bad") || v.includes("damag") || v.includes("broken")) return "bad";
-            return "neutral";
         }
 
         function tableMessage(text, isError = false) {
@@ -154,9 +138,9 @@ const DevicesPanel = (() => {
             return [...list].sort((a, b) => {
                 if (by === "brand") return text(a.brand, b.brand) || text(a.name, b.name);
                 if (by === "ram") return (b.ram_gb - a.ram_gb) || text(a.name, b.name);
-                if (by === "issued") {
-                    const ta = a.issued_at ? new Date(a.issued_at).getTime() : -Infinity;
-                    const tb = b.issued_at ? new Date(b.issued_at).getTime() : -Infinity;
+                if (by === "added") {
+                    const ta = addedAt(a) ? new Date(addedAt(a)).getTime() : -Infinity;
+                    const tb = addedAt(b) ? new Date(addedAt(b)).getTime() : -Infinity;
                     return tb - ta;
                 }
                 return text(a.name, b.name);
@@ -186,7 +170,11 @@ const DevicesPanel = (() => {
                     device.hdd_gb ? `${device.hdd_gb} GB HDD` : "",
                 ].filter(Boolean).map(s => `<span class="spec">${s}</span>`).join("");
 
-                const issued = formatDate(device.issued_at);
+                const added = addedAt(device);
+                const addedDate = formatDate(added);
+                const addedTime = addedDate
+                    ? new Date(added).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "";
 
                 return `
                 <tr>
@@ -200,7 +188,10 @@ const DevicesPanel = (() => {
                     </td>
                     <td><span class="pill ${statusTone(device.status)}">${escapeHTML(pretty(device.status))}</span></td>
                     <td><span class="pill ${conditionTone(device.condition)}">${escapeHTML(pretty(device.condition))}</span></td>
-                    <td class="${issued ? "" : "muted"}">${issued ?? "Not issued"}</td>
+                    <td title="${escapeHTML(added ? new Date(added).toLocaleString() : "")}">
+                        ${addedDate ?? "-"}
+                        ${addedTime ? `<div class="device-sub">${addedTime}</div>` : ""}
+                    </td>
                     <td class="muted">#${escapeHTML(device.id)}</td>
                 </tr>`;
             }).join("");

@@ -149,6 +149,7 @@ def get_user_loading_options(role: UserRole):
             selectinload(User.supervisor_assignment),
             selectinload(User.login_history),
             selectinload(User.device_requests),
+            selectinload(User.device_assignments),
             selectinload(User.join_request),
         ])
 

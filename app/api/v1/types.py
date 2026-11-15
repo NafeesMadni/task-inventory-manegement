@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, model_validator
 
 from app.database.models import (
     ApprovalDecision,
@@ -9,6 +10,7 @@ from app.database.models import (
     DeviceRequestType,
     DeviceStatus,
     JoinRequestStatus,
+    RepairStatus,
     UserRole,
 )
 
@@ -174,10 +176,91 @@ class AvailableDevicesResponse(BaseModel):
     hdd_gb: int
     processor: str
     brand: str
-    issued_at: datetime | None = None
+    created_at: datetime | None = None
 
     status: DeviceStatus
     condition: DeviceCondition
+
+
+class MyDevicesResponse(BaseModel):
+    device_info: AvailableDevicesResponse
+    assigned_at: datetime | None = None
+    condition_on_issue: DeviceCondition | None = None
+
+
+class UserRef(BaseModel):
+    id: int
+    username: str
+    role: UserRole | None = None
+
+
+class DeviceInfo(BaseModel):
+    id: int
+    name: str
+    serial_no: str
+    brand: str
+    processor: str
+    ram_gb: int
+    ssd_gb: int
+    hdd_gb: int
+    status: DeviceStatus
+    condition: DeviceCondition
+    purchase_date: datetime | None = None
+    purchase_price: float | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class Assignments(BaseModel):
+    id: int
+    request_id: int | None = None  # None = assigned directly by an admin
+    assigned_to: UserRef
+    assigned_by: UserRef | None = None  # None = direct assignment or a deleted user
+    scheduled_at: datetime
+    assigned_at: datetime | None = None
+    returned_at: datetime | None = None
+    condition_on_issue: DeviceCondition | None = None
+    condition_on_return: DeviceCondition | None = None
+
+    @computed_field
+    @property
+    def state(self) -> Literal["scheduled", "active", "returned"]:
+        if self.returned_at:
+            return "returned"
+        return "active" if self.assigned_at else "scheduled"
+
+
+class Repairs(BaseModel):
+    id: int
+    request_id: int
+    requested_by: UserRef
+    issue: str | None = None  # what the user reported (from the request)
+    note: str  # the admin/supervisor's remarks when approving
+    status: RepairStatus
+    requested_at: datetime
+    scheduled_at: datetime
+    completed_at: datetime | None = None
+
+    @computed_field
+    @property
+    def is_active(self) -> bool:
+        return self.status in (RepairStatus.SCHEDULED, RepairStatus.IN_PROGRESS)
+
+
+class HistorySummary(BaseModel):
+    total_assignments: int
+    total_repairs: int
+    current_holder: UserRef | None = None  # who has it right now
+    under_repair: bool
+
+
+class DevicesHistory(BaseModel):
+    device_info: DeviceInfo
+    summary: HistorySummary
+
+    # newest first
+    repairs: list[Repairs]
+    assignments: list[Assignments]
 
 
 class AssignedByDevicesResponse(BaseModel):
