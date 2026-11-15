@@ -9,6 +9,7 @@
 const ApprovalsPanel = (() => {
     const { $, api, escapeHTML, pretty, toast, errorMessage } = Portal;
     const { statusKind, typeTone, STATUS_TONE } = RequestUI;
+    const { statusTone, conditionTone } = DeviceUI;
 
     let me = "";
     let role = "pending";
@@ -35,7 +36,6 @@ const ApprovalsPanel = (() => {
 
     const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
     const initials = name => String(name || "?").trim().slice(0, 2).toUpperCase();
-    const shorten = (text, max) => text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
     // Username plus role badge.
     function person(username, userRole) {
@@ -83,13 +83,11 @@ const ApprovalsPanel = (() => {
         return localDateTime(date).slice(0, 10);
     }
 
-    // What the request is about, in one short line.
-    function summaryText(request) {
-        if (isNewType(request)) return shorten(request.requested_specs || "No specifications given", 90);
-
-        return request.device_name
-            ? `${request.device_name} (#${request.device_id})`
-            : `Device #${request.device_id ?? "-"}`;
+    // List "Details" column: just the device id. A new-device request has no device yet.
+    function listDetails(request) {
+        return isNewType(request)
+            ? `<span class="muted">New device</span>`
+            : `<span class="spec">Device #${escapeHTML(request.device_info?.id ?? "-")}</span>`;
     }
 
     // Short progress text for the list: "1 of 2 approved" / "Rejected at level 1".
@@ -179,12 +177,16 @@ const ApprovalsPanel = (() => {
         listMessage("Loading requests...");
 
         try {
-            // Admins and supervisors both read with only_my_pending=false:
-            // admins get everything, supervisors get requests they are an approver on.
-            const response = await api("/device/all-requests?only_my_pending=false", { method: "POST" });
+            // Admins get every request. For a supervisor, only_my_developers=true returns the requests
+            // of their developers, which are the ones they have to approve.
+            const response = await RequestUI.allRequests(role === "supervisor");
             if (!response) return;
-            if (response.status === 403) throw new Error("You are not authorized to view these requests.");
-            if (!response.ok) throw new Error("Unable to load requests.");
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(response.status === 403
+                    ? "You are not authorized to view these requests."
+                    : errorMessage(data, response.status));
+            }
 
             // De-duplicate, and for supervisors keep only requests they are actually an approver on.
             const byId = new Map();
@@ -258,10 +260,10 @@ const ApprovalsPanel = (() => {
                     <div class="device-name">#${escapeHTML(request.request_id)}</div>
                     <span class="pill ${typeTone(request.type)}" style="margin-top:6px">${escapeHTML(pretty(request.type))}</span>
                 </td>
-                <td>${request.requester_username
-                    ? person(request.requester_username, request.requester_role)
+                <td>${request.requester_info?.username
+                    ? `<strong>${escapeHTML(request.requester_info.username)}</strong>`
                     : `<span class="muted">-</span>`}</td>
-                <td><div class="note">${escapeHTML(summaryText(request))}</div></td>
+                <td>${listDetails(request)}</td>
                 <td class="muted">${escapeHTML(fmtDate(request.requested_at) ?? "-")}</td>
                 <td class="muted">${escapeHTML(progressText(request))}</td>
                 <td>${waiting
@@ -277,26 +279,38 @@ const ApprovalsPanel = (() => {
     /* ---------- Slide-over panel ---------- */
 
     function overviewHTML(request) {
-        const asked = isNewType(request)
-            ? ["Requested specifications", escapeHTML(request.requested_specs || "None given")]
-            : ["Device", escapeHTML(request.device_name
-                ? `${request.device_name} (#${request.device_id})`
-                : `Device #${request.device_id ?? "-"}`)];
-
+        const who = request.requester_info;
+        const device = request.device_info;
         const reasonLabel = pretty(request.type).includes("repair") ? "Reported issue" : "Reason";
 
-        const requesterCard = request.requester_username ? `
+        const requesterCard = who ? `
             <section class="holder-card">
                 <p class="hist-label">Requested by</p>
                 <div class="holder-main">
-                    <span class="avatar">${escapeHTML(initials(request.requester_username))}</span>
+                    <span class="avatar">${escapeHTML(initials(who.username))}</span>
                     <div>
-                        <div class="holder-name">${person(request.requester_username, request.requester_role)}</div>
-                        ${fmtDateTime(request.requested_at)
-                            ? `<div class="holder-sub">on ${escapeHTML(fmtDateTime(request.requested_at))}</div>` : ""}
+                        <div class="holder-name">${person(who.username, who.role)}</div>
+                        <div class="holder-sub">${escapeHTML(who.email || "")}${who.email && fmtDateTime(request.requested_at) ? " · " : ""}${fmtDateTime(request.requested_at)
+                            ? `on ${escapeHTML(fmtDateTime(request.requested_at))}` : ""}</div>
                     </div>
                 </div>
             </section>` : "";
+
+        const deviceSection = device ? `
+        <section>
+            <h3 class="drawer-h">Device</h3>
+            ${kv([
+                ["Name", `${escapeHTML(device.name)} (#${escapeHTML(device.id)})`],
+                ["Brand", escapeHTML(device.brand)],
+                ["Processor", escapeHTML(device.processor)],
+                ["Memory (RAM)", device.ram_gb ? `${device.ram_gb} GB` : null],
+                ["SSD", device.ssd_gb ? `${device.ssd_gb} GB` : null],
+                ["HDD", device.hdd_gb ? `${device.hdd_gb} GB` : null],
+                ["Status", `<span class="pill ${statusTone(device.status)}">${escapeHTML(pretty(device.status))}</span>`],
+                ["Condition", `<span class="pill ${conditionTone(device.condition)}">${escapeHTML(pretty(device.condition))}</span>`],
+                ["Added to inventory", fmtDateTime(device.created_at)],
+            ])}
+        </section>` : "";
 
         return `
         ${requesterCard}
@@ -304,12 +318,13 @@ const ApprovalsPanel = (() => {
             <h3 class="drawer-h">Request details</h3>
             ${kv([
                 ["Type", escapeHTML(pretty(request.type))],
-                asked,
+                isNewType(request) ? ["Requested specifications", escapeHTML(request.requested_specs || "None given")] : null,
                 [reasonLabel, request.issue ? `“${escapeHTML(request.issue)}”` : null],
-                ["Requested", request.requester_username ? null : escapeHTML(fmtDateTime(request.requested_at) ?? "")],
+                ["Requested", who ? null : escapeHTML(fmtDateTime(request.requested_at) ?? "")],
                 ["Status", escapeHTML(pretty(request.status))],
-            ])}
-        </section>`;
+            ].filter(Boolean))}
+        </section>
+        ${deviceSection}`;
     }
 
     function trailHTML(request) {
@@ -446,11 +461,11 @@ const ApprovalsPanel = (() => {
     /* ---------- Decision dialog ---------- */
 
     function detailsCell(request) {
+        const device = request.device_info;
+
         const main = isNewType(request)
             ? `<div class="note">${escapeHTML(request.requested_specs || "No specifications given")}</div>`
-            : `<span class="spec">${request.device_name
-                ? escapeHTML(request.device_name) + " · "
-                : ""}Device #${escapeHTML(request.device_id ?? "-")}</span>`;
+            : `<span class="spec">${device ? escapeHTML(device.name) + " · " : ""}Device #${escapeHTML(device?.id ?? "-")}</span>`;
 
         const issue = request.issue
             ? `<div class="note muted remark" style="margin-top:6px">“${escapeHTML(request.issue)}”</div>`
@@ -484,7 +499,7 @@ const ApprovalsPanel = (() => {
         $("dlg-summary").innerHTML = `
             <div><span class="pill ${typeTone(current.type)}">${escapeHTML(type)}</span>
                 <span class="muted" style="margin-left:6px">
-                    ${current.requester_username ? `by ${escapeHTML(current.requester_username)} · ` : ""}${escapeHTML(fmtDate(current.requested_at) ?? "")}
+                    ${current.requester_info?.username ? `by ${escapeHTML(current.requester_info.username)} · ` : ""}${escapeHTML(fmtDate(current.requested_at) ?? "")}
                 </span></div>
             <div style="margin-top:8px">${detailsCell(current)}</div>`;
 

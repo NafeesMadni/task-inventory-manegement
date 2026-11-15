@@ -19,6 +19,27 @@ class StatusResponse(BaseModel):
     message: str
 
 
+class UserRef(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    role: UserRole | None = None
+
+
+class DeviceRef(BaseModel):
+    id: int
+    name: str
+    ram_gb: int
+    ssd_gb: int
+    hdd_gb: int
+    processor: str
+    brand: str
+    created_at: datetime | None = None
+
+    status: DeviceStatus
+    condition: DeviceCondition
+
+
 # -----------------------------
 # USER ENDPOINT MODELS
 # -----------------------------
@@ -130,12 +151,13 @@ class _RequestApprovals(BaseModel):
 
 class AllDevicesRequestsResponse(BaseModel):
     request_id: int
-    requester_username: str
+    requester_info: UserRef
     requested_at: datetime
     type: DeviceRequestType
     status: DeviceRequestStatus
-    device_id: int | None = None
+    device_info: DeviceRef | None = None
     requested_specs: str | None = None
+    issue: str | None
 
     approvals: list[_RequestApprovals]
 
@@ -168,30 +190,10 @@ class MakeDeviceRequest(BaseModel):
         return self
 
 
-class AvailableDevicesResponse(BaseModel):
-    id: int
-    name: str
-    ram_gb: int
-    ssd_gb: int
-    hdd_gb: int
-    processor: str
-    brand: str
-    created_at: datetime | None = None
-
-    status: DeviceStatus
-    condition: DeviceCondition
-
-
 class MyDevicesResponse(BaseModel):
-    device_info: AvailableDevicesResponse
+    device_info: DeviceRef
     assigned_at: datetime | None = None
     condition_on_issue: DeviceCondition | None = None
-
-
-class UserRef(BaseModel):
-    id: int
-    username: str
-    role: UserRole | None = None
 
 
 class DeviceInfo(BaseModel):

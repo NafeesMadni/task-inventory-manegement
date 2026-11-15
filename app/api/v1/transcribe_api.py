@@ -43,7 +43,7 @@ class TranscribeAPI:
         workflow = (
             transcribe_audio.s(  # type: ignore
                 audio_bytes=await file.read(),
-                model_type="base",
+                model_type="medium",
             )
             | process_transcript_with_ai.s(  # type: ignore
                 recorded_on=datetime.now(UTC).strftime("%Y-%m-%d"),

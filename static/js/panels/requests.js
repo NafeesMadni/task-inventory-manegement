@@ -84,11 +84,15 @@ const RequestsPanel = (() => {
             tableMessage("Loading requests...");
 
             try {
-                // only_my_pending=true returns the signed-in user's own requests (developers and supervisors).
-                const response = await api("/device/all-requests?only_my_pending=true", { method: "POST" });
+                // only_my_developers=false returns the signed-in user's own requests.
+                const response = await RequestUI.allRequests(false);
                 if (!response) return;
-                if (response.status === 403) throw new Error("You are not authorized to view these requests.");
-                if (!response.ok) throw new Error("Unable to load your requests.");
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(response.status === 403
+                        ? "You are not authorized to view these requests."
+                        : errorMessage(data, response.status));
+                }
 
                 requests = (await response.json())
                     .map(r => ({ ...r, _date: new Date(r.requested_at) }))
@@ -153,7 +157,7 @@ const RequestsPanel = (() => {
 
                 const details = isNew
                     ? `<div class="note">${escapeHTML(request.requested_specs || "No specifications given")}</div>`
-                    : `<span class="spec">Device #${escapeHTML(request.device_id ?? "-")}</span>`;
+                    : `<span class="spec">Device #${escapeHTML(request.device_info?.id ?? "-")}</span>`;
 
                 return `
                 <tr>
@@ -187,6 +191,10 @@ const RequestsPanel = (() => {
 
             setType(type);
             $("req-dialog").showModal();
+
+            // Fetch the user's own devices now, so the Repair tab opens instantly.
+            // (A failure is reported when the Repair tab actually needs the list.)
+            loadMine().catch(() => {});
         }
 
         function closeDialog() {
