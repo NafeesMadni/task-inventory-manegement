@@ -1,0 +1,179 @@
+/* =========================================================
+   Device Portal – voice input for device forms (voice-ui.js)
+   Kept separate from app.css. Uses the variables defined there.
+   ========================================================= */
+
+.voice {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px dashed #b9d6c8;
+  border-radius: 12px;
+  background: #f6fbf8;
+}
+
+.voice-title {
+  color: var(--primary-dark);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.voice-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* record button */
+
+.voice-rec {
+  gap: 8px;
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.voice-rec.recording {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.voice-rec.recording .voice-dot {
+  background: var(--danger);
+  animation: voice-pulse 1.2s infinite;
+}
+
+/* status line */
+
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.voice-status.working {
+  color: var(--text-soft);
+}
+
+.voice-status.ok {
+  color: var(--primary-dark);
+  font-weight: 650;
+}
+
+.voice-status.error {
+  color: var(--danger);
+}
+
+.voice-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: voice-spin 0.8s linear infinite;
+}
+
+/* review notes */
+
+.voice-review {
+  padding-top: 10px;
+  border-top: 1px solid #dcebe3;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.voice-review ul {
+  margin: 0 0 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.voice-jump {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary-dark);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.voice-follow {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.voice-heard {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.voice-heard summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.voice-heard p {
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+/* fields: filled from the recording / needs a second look */
+
+input.voice-filled,
+textarea.voice-filled,
+select.voice-filled {
+  border-color: #70b99a;
+  background: #f2faf6;
+}
+
+input.voice-flag,
+textarea.voice-flag,
+select.voice-flag {
+  border-color: #d9a431;
+  background: #fffaf0;
+  box-shadow: 0 0 0 3px rgba(217, 164, 49, 0.15);
+}
+
+@keyframes voice-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(184, 62, 62, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(184, 62, 62, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(184, 62, 62, 0);
+  }
+}
+
+@keyframes voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-rec.recording .voice-dot,
+  .voice-spinner {
+    animation: none;
+  }
+}

@@ -19,6 +19,7 @@ const ApprovalsPanel = (() => {
     let activeTab = "overview"; // overview | trail
     let current = null;         // request shown in the decision dialog
     let grant = true;           // decision shown in the decision dialog
+    let voice = null;           // voice input for the new-device details
 
     /* ---------- Helpers ---------- */
 
@@ -155,6 +156,8 @@ const ApprovalsPanel = (() => {
         });
 
         // Decision dialog
+        voice = VoiceUI.mount($("ap-voice"), { form: $("decision-form"), actionLabel: "approve the request" });
+
         $("dlg-close").addEventListener("click", closeDialog);
         $("dlg-cancel").addEventListener("click", closeDialog);
         $("decision-form").addEventListener("submit", submitDecision);
@@ -467,6 +470,7 @@ const ApprovalsPanel = (() => {
 
         const form = $("decision-form");
         form.reset();
+        voice.reset();
         $("dlg-message").className = "message";
 
         const isAdmin = role === "admin";
@@ -509,6 +513,7 @@ const ApprovalsPanel = (() => {
     }
 
     function closeDialog() {
+        voice.reset(); // stops a recording that is still running
         $("decision-dialog").close();
     }
 
