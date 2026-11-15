@@ -27,6 +27,7 @@ from app.api.v1.types import (
     LoginRequest,
     SignupRequest,
     StatusResponse,
+    UserRef,
     UserResponse,
 )
 from app.core.config import get_settings
@@ -96,12 +97,19 @@ class UserAPI:
             status_code=status.HTTP_200_OK,
         )
 
-        # Get current user info
+        # Get user info
         self.router.add_api_route(
             "/me",
             endpoint=self.get_me,
-            methods=["get"],
+            methods=["GET"],
             response_model=UserResponse,
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/active-users",
+            endpoint=self.get_active_users,
+            methods=["GET"],
+            response_model=list[UserRef],
             status_code=status.HTTP_200_OK,
         )
 
@@ -427,6 +435,29 @@ class UserAPI:
             role=user.role,
             email=user.email,
         )
+
+    async def get_active_users(
+        self, user: GetCurrentUser, session: DBSession
+    ) -> list[UserRef]:
+
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
+            )
+        results = await session.scalars(select(User).where(User.role.is_not(None)))
+        active_users = results.all()
+
+        return [
+            UserRef(
+                id=u.id,
+                username=u.username,
+                role=u.role,
+                email=u.email,
+            )
+            for u in sorted(
+                active_users, key=lambda user: user.created_at, reverse=True
+            )
+        ]
 
     async def get_active_approvals(
         self, _: GetCurrentUser, session: DBSession

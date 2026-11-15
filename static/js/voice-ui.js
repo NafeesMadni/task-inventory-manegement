@@ -20,8 +20,8 @@ const VoiceUI = (() => {
 
     const MAX_RECORD_SECONDS = 120; // a recording stops by itself after this long
     const MAX_UPLOAD_MB = 10;       // larger files are refused before uploading
-    const POLL_MS = 1500;           // how often the result is checked
-    const MAX_WAIT_MS = 120000;     // give up waiting after this long
+    const POLL_MS = 3 * 1000; // how often the result is checked: 3 seconds (0.05 minutes)
+    const MAX_WAIT_MS = 5 * 60 * 1000; // give up waiting after this long: 5 minutes (300 seconds)
 
     const LABELS = {
         name: "Name",

@@ -10,8 +10,8 @@ from app.api.v1.types import (
     AddDeviceRequest,
     AllDevicesRequestsResponse,
     Assignments,
-    AvailableDevicesResponse,
     DeviceInfo,
+    DeviceRef,
     DevicesHistory,
     HistorySummary,
     MakeDeviceRequest,
@@ -64,7 +64,7 @@ class DeviceAPI:
             "/search",
             endpoint=self.search_devices,
             methods=["POST"],
-            response_model=list[AvailableDevicesResponse],
+            response_model=list[DeviceRef],
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
@@ -98,7 +98,7 @@ class DeviceAPI:
         )
         self.router.add_api_route(
             "/all-requests",
-            endpoint=self.get_all_devices_requests,
+            endpoint=self.get_devices_requests,
             methods=["POST"],
             response_model=list[AllDevicesRequestsResponse],
             status_code=status.HTTP_200_OK,
@@ -111,33 +111,58 @@ class DeviceAPI:
             status_code=status.HTTP_200_OK,
         )
 
+    def _user_ref(self, u: User | None) -> UserRef | None:
+        return (
+            UserRef(id=u.id, username=u.username, role=u.role, email=u.email)
+            if u
+            else None
+        )
+
+    def _device_ref(self, d: Device | None) -> DeviceRef | None:
+        return (
+            DeviceRef(
+                id=d.id,
+                name=d.name,
+                ram_gb=d.ram_gb,
+                hdd_gb=d.hdd_gb,
+                ssd_gb=d.ssd_gb,
+                processor=d.processor,
+                brand=d.brand,
+                status=d.status,
+                condition=d.condition,
+                created_at=d.created_at,
+            )
+            if d
+            else None
+        )
+
     async def get_search_options(self) -> SearchOptionsResponse:
         return SearchOptionsResponse(
             statuses=list(DeviceStatus),
             conditions=list(DeviceCondition),
         )
 
-    async def get_all_devices_requests(
+    async def get_devices_requests(
         self,
         user: GetCurrentUser,
         session: DBSession,
-        response: Response,
-        only_my_pending: Annotated[bool, Query()] = False,
+        only_my_developers: Annotated[bool, Query()] = False,
     ) -> list[AllDevicesRequestsResponse]:
         resp_data: list[AllDevicesRequestsResponse] = []
 
-        if (not only_my_pending and user.role == UserRole.DEVELOPER) or (
-            only_my_pending and user.role == UserRole.ADMIN
-        ):
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return resp_data
+        if only_my_developers and user.role == UserRole.DEVELOPER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You don't have any developers!",
+            )
 
         devices_requests: Sequence[DevicesRequest] = []
 
-        # ADMIN: can see everyone requests and their approvals
+        # ADMIN: can see everyone's requests and their level of approvals
         if user.role == UserRole.ADMIN:
             result = await session.scalars(
                 select(DevicesRequest).options(
+                    selectinload(DevicesRequest.device),
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
@@ -146,11 +171,12 @@ class DeviceAPI:
             )
             devices_requests = result.all()
 
-        # SUPERVISOR with only_my_pending(False): can see only their developers requests and level of approvals
-        elif not only_my_pending and user.role == UserRole.SUPERVISOR:
+        # SUPERVISOR with only_my_developers(True): Supervisor can only see their developers requests
+        elif only_my_developers and user.role == UserRole.SUPERVISOR:
             result = await session.scalars(
                 select(DevicesRequest)
                 .options(
+                    selectinload(DevicesRequest.device),
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
@@ -160,13 +186,12 @@ class DeviceAPI:
             )
             devices_requests = result.all()
 
-        # SUPERVISOR/DEVELOPER: can see only their own and developers requests and approvals
-        elif (
-            only_my_pending and user.role == UserRole.SUPERVISOR
-        ) or user.role == UserRole.DEVELOPER:
+        # SUPERVISOR/DEVELOPER: can only see their own requests
+        elif user.role == UserRole.SUPERVISOR or user.role == UserRole.DEVELOPER:
             result = await session.scalars(
                 select(DevicesRequest)
                 .options(
+                    selectinload(DevicesRequest.device),
                     selectinload(DevicesRequest.approvals).selectinload(
                         RequestApproval.approver
                     ),
@@ -174,14 +199,18 @@ class DeviceAPI:
                 )
                 .where(DevicesRequest.requested_by == user.id)
             )
+
             devices_requests = result.all()
 
         else:
-            response.status_code = status.HTTP_400_BAD_REQUEST
-            return resp_data
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not a valid request, please contact admin.",
+            )
 
         for device_request in devices_requests:
             approvals: list[_RequestApprovals] = []
+
             for approval in device_request.approvals:
                 approvals.append(
                     _RequestApprovals(
@@ -193,15 +222,17 @@ class DeviceAPI:
                         acted_at=approval.acted_at,
                     )
                 )
+
             resp_data.append(
                 AllDevicesRequestsResponse(
                     request_id=device_request.id,
-                    requester_username=device_request.requester.username,
+                    requester_info=self._user_ref(device_request.requester),  # type: ignore
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,
-                    device_id=device_request.device_id,
+                    device_info=self._device_ref(device_request.device),
                     requested_specs=device_request.requested_specs,
+                    issue=device_request.issue,
                     approvals=approvals,
                 )
             )
@@ -228,9 +259,6 @@ class DeviceAPI:
         )
         devices_history: list[DevicesHistory] = []
 
-        def _ref(u: User | None) -> UserRef | None:
-            return UserRef(id=u.id, username=u.username, role=u.role) if u else None
-
         for d in devices:
             device_info = DeviceInfo(
                 id=d.id,
@@ -253,8 +281,8 @@ class DeviceAPI:
                 Assignments(
                     id=a.id,
                     request_id=a.request_id,
-                    assigned_to=_ref(a.assigned_to_user),  # type: ignore
-                    assigned_by=_ref(a.assigned_by_user),
+                    assigned_to=self._user_ref(a.assigned_to_user),  # type: ignore
+                    assigned_by=self._user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
                     returned_at=a.returned_at,
@@ -270,7 +298,7 @@ class DeviceAPI:
                 Repairs(
                     id=r.id,
                     request_id=r.request_id,
-                    requested_by=_ref(r.request.requester),  # type: ignore
+                    requested_by=self._user_ref(r.request.requester),  # type: ignore
                     issue=r.request.issue,
                     note=r.note,
                     status=r.status,
@@ -327,7 +355,7 @@ class DeviceAPI:
 
     async def search_devices(
         self, payload: SearchDevicesRequest, _: GetCurrentUser, session: DBSession
-    ) -> list[AvailableDevicesResponse]:
+    ) -> list[DeviceRef]:
 
         filters = []
 
@@ -341,21 +369,7 @@ class DeviceAPI:
 
         available_devices = result.all()
 
-        return [
-            AvailableDevicesResponse(
-                id=device.id,
-                name=device.name,
-                ram_gb=device.ram_gb,
-                ssd_gb=device.ssd_gb,
-                hdd_gb=device.hdd_gb,
-                processor=device.processor,
-                brand=device.brand,
-                status=device.status,
-                condition=device.condition,
-                created_at=device.created_at,
-            )
-            for device in available_devices
-        ]
+        return [self._device_ref(device) for device in available_devices]  # type: ignore
 
     async def get_my_devices(
         self, user: GetCurrentUser, session: DBSession
@@ -376,7 +390,7 @@ class DeviceAPI:
             if device.status == DeviceStatus.ASSIGNED:
                 devices.append(
                     MyDevicesResponse(
-                        device_info=AvailableDevicesResponse(
+                        device_info=DeviceRef(
                             id=device.id,
                             name=device.name,
                             ram_gb=device.ram_gb,

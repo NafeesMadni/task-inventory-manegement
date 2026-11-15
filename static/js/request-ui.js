@@ -1,10 +1,25 @@
 /* =========================================================
    Device Portal – shared rendering helpers for device requests
-   (used by requests.html and approvals.html). Load after shell.js.
+   (used by the Requests and Approvals panels in devices.html). Load after shell.js.
    ========================================================= */
 
 const RequestUI = (() => {
-    const { escapeHTML, pretty } = Portal;
+    const { api, escapeHTML, pretty } = Portal;
+
+    // The requests list endpoint (relative to /api/v1). Change the method here if your route isn't a POST.
+    const ALL_REQUESTS_PATH = "/device/all-requests";
+    const ALL_REQUESTS_METHOD = "POST";
+
+    // Who gets what (see get_devices_requests on the backend):
+    //   admin                      -> every request (the flag is ignored)
+    //   supervisor, false          -> their own requests
+    //   supervisor, true           -> their developers' requests (the ones they approve)
+    //   developer, false           -> their own requests
+    // Returns the raw response, or null after a redirect to sign in.
+    function allRequests(onlyMyDevelopers = false) {
+        return api(`${ALL_REQUESTS_PATH}?only_my_developers=${onlyMyDevelopers ? "true" : "false"}`,
+            { method: ALL_REQUESTS_METHOD });
+    }
 
     function formatDate(value) {
         const date = new Date(value);
@@ -59,5 +74,5 @@ const RequestUI = (() => {
         return `<div class="approvals">${rows.join("")}</div>`;
     }
 
-    return { formatDate, formatDateTime, statusKind, STATUS_TONE, typeTone, renderApprovals };
+    return { allRequests, formatDate, formatDateTime, statusKind, STATUS_TONE, typeTone, renderApprovals };
 })();
