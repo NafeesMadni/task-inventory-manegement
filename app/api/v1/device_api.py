@@ -282,6 +282,7 @@ class DeviceAPI:
                 selectinload(Device.assignments).options(
                     selectinload(DeviceAssignment.assigned_to_user),
                     selectinload(DeviceAssignment.assigned_by_user),
+                    selectinload(DeviceAssignment.returned_by_user),
                 ),
                 selectinload(Device.repairs)
                 .selectinload(DeviceRepair.request)
@@ -316,6 +317,9 @@ class DeviceAPI:
                     assigned_by=self._user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
+                    returned_by=self._user_ref(a.returned_by_user),
+                    return_type=a.return_type,
+                    return_note=a.return_note,
                     returned_at=a.returned_at,
                     condition_on_issue=a.condition_on_issue,
                     condition_on_return=a.condition_on_return,

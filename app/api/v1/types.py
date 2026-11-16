@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, computed_field, model_validator
 
 from app.database.models import (
     ApprovalDecision,
+    AssignmentReturnType,
     DeviceCondition,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -236,15 +237,20 @@ class Assignments(BaseModel):
     assigned_by: UserRef | None = None  # None = direct assignment or a deleted user
     scheduled_at: datetime
     assigned_at: datetime | None = None
+
+    returned_by: UserRef | None
+    return_type: AssignmentReturnType | None = None
+    return_note: str | None = None
     returned_at: datetime | None = None
     condition_on_issue: DeviceCondition | None = None
     condition_on_return: DeviceCondition | None = None
 
     @computed_field
     @property
-    def state(self) -> Literal["scheduled", "active", "returned"]:
-        if self.returned_at:
-            return "returned"
+    def state(self) -> Literal["scheduled", "active", "returned", "revoked"]:
+        if self.return_type:
+            return self.return_type.value
+
         return "active" if self.assigned_at else "scheduled"
 
 
