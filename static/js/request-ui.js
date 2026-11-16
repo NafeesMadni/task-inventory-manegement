@@ -6,7 +6,7 @@
 const RequestUI = (() => {
     const { api, escapeHTML, pretty } = Portal;
 
-    // The requests list endpoint (relative to /api/v1). 
+    // The requests list endpoint (relative to /api/v1).
     const ALL_REQUESTS_PATH = "/device/all-requests";
     const ALL_REQUESTS_METHOD = "GET";
 

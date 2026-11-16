@@ -5,9 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Devices | Device Portal</title>
-    <link rel="stylesheet" href="/static/css/app.css?v=20261115a">
-    <link rel="stylesheet" href="/static/css/history.css?v=20261115a">
-    <link rel="stylesheet" href="/static/css/voice.css?v=20261115a">
+    <link rel="stylesheet" href="/static/css/app.css?v=20261116a">
+    <link rel="stylesheet" href="/static/css/history.css?v=20261116a">
+    <link rel="stylesheet" href="/static/css/voice.css?v=20261116a">
 </head>
 
 <body>
@@ -568,16 +568,44 @@
         </form>
     </dialog>
 
-    <script src="/static/js/shell.js?v=20261115a"></script>
-    <script src="/static/js/tree.js?v=20261115a"></script>
-    <script src="/static/js/request-ui.js?v=20261115a"></script>
-    <script src="/static/js/device-ui.js?v=20261115a"></script>
-    <script src="/static/js/voice-ui.js?v=20261115a"></script>
-    <script src="/static/js/panels/devices.js?v=20261115a"></script>
-    <script src="/static/js/panels/history.js?v=20261115a"></script>
-    <script src="/static/js/panels/my-devices.js?v=20261115a"></script>
-    <script src="/static/js/panels/requests.js?v=20261115a"></script>
-    <script src="/static/js/panels/approvals.js?v=20261115a"></script>
+    <!-- Return a device / revoke access (filled by access-ui.js) -->
+    <dialog class="modal" id="rs-dialog">
+        <form id="rs-form" novalidate>
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow" id="rs-eyebrow">Device</p>
+                    <h2 id="rs-title">Return this device?</h2>
+                </div>
+                <button type="button" class="icon-btn" id="rs-close" aria-label="Close">&times;</button>
+            </div>
+
+            <p class="subtitle" id="rs-text"></p>
+
+            <div class="form-group">
+                <label for="rs-note" id="rs-note-label">Note (optional)</label>
+                <textarea id="rs-note" name="return_note" maxlength="500"></textarea>
+            </div>
+
+            <div id="rs-message" class="message" role="alert"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-lg" id="rs-cancel">Cancel</button>
+                <button type="submit" class="btn btn-lg" id="rs-submit">Confirm</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/js/shell.js?v=20261116a"></script>
+    <script src="/static/js/tree.js?v=20261116a"></script>
+    <script src="/static/js/request-ui.js?v=20261116a"></script>
+    <script src="/static/js/device-ui.js?v=20261116a"></script>
+    <script src="/static/js/voice-ui.js?v=20261116a"></script>
+    <script src="/static/js/access-ui.js?v=20261116a"></script>
+    <script src="/static/js/panels/devices.js?v=20261116a"></script>
+    <script src="/static/js/panels/history.js?v=20261116a"></script>
+    <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
+    <script src="/static/js/panels/requests.js?v=20261116a"></script>
+    <script src="/static/js/panels/approvals.js?v=20261116a"></script>
     <script>
         const { $, escapeHTML, toast } = Portal;
 

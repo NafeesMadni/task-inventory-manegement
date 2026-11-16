@@ -469,8 +469,14 @@ class DeviceAPI:
         self,
         device_id: Annotated[int, Query(...)],
         payload: DevicePartialUpdate,
+        user: GetCurrentUser,
         session: DBSession,
     ):
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
+            )
+
         device = await session.get(Device, device_id)
 
         if not device:

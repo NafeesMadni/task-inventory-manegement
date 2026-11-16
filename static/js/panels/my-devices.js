@@ -8,6 +8,7 @@ const MyDevicesPanel = (() => {
     const { conditionTone, specChips, loadMine } = DeviceUI;
 
     let devices = [];
+    let meId = null; // the signed-in user
 
     function formatDate(value) {
         const date = new Date(value);
@@ -71,7 +72,12 @@ const MyDevicesPanel = (() => {
                         ? `<div class="device-sub">Issued as ${escapeHTML(pretty(device.condition_on_issue))}</div>`
                         : ""}
                 </td>
-                <td><button class="btn btn-sm" data-repair="${escapeHTML(device.id)}">Request repair</button></td>
+                <td>
+                    <div class="actions">
+                        <button class="btn btn-sm" data-repair="${escapeHTML(device.id)}">Request repair</button>
+                        <button class="btn btn-sm" data-return="${escapeHTML(device.id)}">Return</button>
+                    </div>
+                </td>
             </tr>`).join("");
     }
 
@@ -81,6 +87,24 @@ const MyDevicesPanel = (() => {
 
         // The hub (devices.html) switches to the Requests tab and opens the repair dialog.
         $("md-table").addEventListener("click", event => {
+            const give = event.target.closest("button[data-return]");
+
+            if (give) {
+                const device = devices.find(d => d.id === Number(give.dataset.return));
+                if (!device) return;
+
+                // A holder handing their own device back; the server records it as a return.
+                AccessUI.open({
+                    mode: "return",
+                    deviceId: device.id,
+                    deviceName: device.name,
+                    holderId: meId,
+                    holderName: "you",
+                    onDone: () => load(true),
+                });
+                return;
+            }
+
             const button = event.target.closest("button[data-repair]");
             if (!button) return;
 
@@ -91,7 +115,8 @@ const MyDevicesPanel = (() => {
     }
 
     // Called once, the first time the panel is shown.
-    async function mount() {
+    async function mount(session) {
+        meId = session.user.id;
         bindEvents();
         await load();
     }

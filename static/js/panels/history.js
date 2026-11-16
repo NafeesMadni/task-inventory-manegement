@@ -14,6 +14,7 @@ const HistoryPanel = (() => {
     const DEVICES_HISTORY_PATH = "/device/history";
 
     let items = [];
+    let meId = null;            // the signed-in admin
     let activeId = null;        // device shown in the panel
     let activeTab = "overview"; // overview | assignments | repairs
 
@@ -199,6 +200,9 @@ const HistoryPanel = (() => {
                        <div class="holder-name">${person(holder)}</div>
                        ${since ? `<div class="holder-sub">Holding it since ${escapeHTML(since)}</div>` : ""}
                    </div>
+               </div>
+               <div style="margin-top:14px">
+                   <button type="button" class="btn btn-reject btn-sm" data-revoke>${holder.id === meId ? "Return device" : "Revoke access"}</button>
                </div>`
             : `<div class="holder-sub">Not assigned to anyone right now.</div>`;
 
@@ -236,6 +240,7 @@ const HistoryPanel = (() => {
             const state = a.state || (a.returned_at ? "returned" : a.assigned_at ? "active" : "scheduled");
             const pill = state === "active" ? `<span class="session-pill active">Active</span>`
                 : state === "scheduled" ? `<span class="pill info">Scheduled</span>`
+                : state === "revoked" ? `<span class="pill bad">Revoked</span>`
                 : `<span class="pill">Returned</span>`;
 
             return `
@@ -247,7 +252,10 @@ const HistoryPanel = (() => {
                 ${kv([
                     ["Scheduled", fmtDateTime(a.scheduled_at)],
                     ["Handed over", fmtDateTime(a.assigned_at)],
-                    ["Returned", fmtDateTime(a.returned_at)],
+                    [state === "revoked" ? "Revoked" : "Returned", fmtDateTime(a.returned_at)],
+                    [state === "revoked" ? "Revoked by" : "Returned by",
+                        a.returned_at ? (a.returned_by ? person(a.returned_by) : "Not recorded") : null],
+                    ["Note", a.return_note ? `“${escapeHTML(a.return_note)}”` : null],
                     ["Assigned by", a.assigned_by ? person(a.assigned_by) : null],
                     ["Source", a.request_id ? `Request #${escapeHTML(a.request_id)}` : "Assigned directly, no request"],
                     ["Condition on issue", a.condition_on_issue ? escapeHTML(pretty(a.condition_on_issue)) : null],
@@ -341,6 +349,22 @@ const HistoryPanel = (() => {
         $("hi-drawer").scrollTop = 0;
     }
 
+    // Take the device back from whoever has it now (or record the admin's own return).
+    function revokeCurrentHolder() {
+        const item = items.find(i => i.device_info.id === activeId);
+        const holder = item?.summary.current_holder;
+        if (!holder) return;
+
+        AccessUI.open({
+            mode: holder.id === meId ? "return" : "revoke",
+            deviceId: item.device_info.id,
+            deviceName: item.device_info.name,
+            holderId: holder.id,
+            holderName: holder.username,
+            onDone: load, // refreshes the list and the open panel
+        });
+    }
+
     function openDrawer(id) {
         activeId = id;
         activeTab = "overview";
@@ -404,7 +428,12 @@ const HistoryPanel = (() => {
             }
 
             const tab = event.target.closest("[data-tab]");
-            if (tab) showTab(tab.dataset.tab);
+            if (tab) {
+                showTab(tab.dataset.tab);
+                return;
+            }
+
+            if (event.target.closest("[data-revoke]")) revokeCurrentHolder();
         });
 
         // Esc: use our animated close instead of the instant default.
@@ -415,7 +444,8 @@ const HistoryPanel = (() => {
     }
 
     // Called once, the first time the panel is shown.
-    async function mount() {
+    async function mount(session) {
+        meId = session.user.id;
         bindEvents();
         await load();
     }
