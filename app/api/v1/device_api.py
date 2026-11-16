@@ -517,7 +517,7 @@ class DeviceAPI:
         payload: ResetDeviceAccess,
         user: GetCurrentUser,
         session: DBSession,
-    ):
+    ) -> StatusResponse:
         # The one active assignment of this device (the partial unique index allows at most one).
         assignment = await session.scalar(
             select(DeviceAssignment)
