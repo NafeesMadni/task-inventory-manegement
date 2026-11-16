@@ -127,7 +127,6 @@ class DevicePartialUpdate(BaseModel):
     ssd_gb: int | None = None
     hdd_gb: int | None = None
     processor: str | None = None
-    status: DeviceStatus | None = None
 
 
 class ProcessDeviceRequest(BaseModel):

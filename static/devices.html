@@ -84,6 +84,7 @@
                                 <th>Condition</th>
                                 <th>Added</th>
                                 <th>ID</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="devices-table"></tbody>
@@ -428,6 +429,59 @@
             </div>
         </form>
     </dialog>
+    <dialog class="modal" id="edit-dialog">
+        <form id="edit-form" novalidate>
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h2>Edit device</h2>
+                </div>
+                <button type="button" class="icon-btn" id="edit-close" aria-label="Close">&times;</button>
+            </div>
+
+            <p class="subtitle">Update the device details or its inventory status.</p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-name">Device name</label>
+                    <input type="text" id="edit-name" name="name" maxlength="150" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-brand">Brand</label>
+                    <input type="text" id="edit-brand" name="brand" maxlength="100" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-processor">Processor</label>
+                    <input type="text" id="edit-processor" name="processor" required>
+                </div>
+            </div>
+
+            <div class="form-row three">
+                <div class="form-group">
+                    <label for="edit-ram">RAM (GB)</label>
+                    <input type="number" id="edit-ram" name="ram_gb" min="0" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-ssd">SSD (GB)</label>
+                    <input type="number" id="edit-ssd" name="ssd_gb" min="0" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-hdd">HDD (GB)</label>
+                    <input type="number" id="edit-hdd" name="hdd_gb" min="0" step="1" required>
+                </div>
+            </div>
+
+            <div id="edit-message" class="message" role="alert"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-lg" id="edit-cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-lg" id="edit-submit">Save changes</button>
+            </div>
+        </form>
+    </dialog>
     <dialog class="modal" id="req-dialog">
         <form id="req-form" novalidate>
             <div class="modal-head">
@@ -601,7 +655,7 @@
     <script src="/static/js/device-ui.js?v=20261116a"></script>
     <script src="/static/js/voice-ui.js?v=20261116a"></script>
     <script src="/static/js/access-ui.js?v=20261116a"></script>
-    <script src="/static/js/panels/devices.js?v=20261116a"></script>
+    <script src="/static/js/panels/devices.js?v=20261116c"></script>
     <script src="/static/js/panels/history.js?v=20261116a"></script>
     <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
     <script src="/static/js/panels/requests.js?v=20261116a"></script>
