@@ -449,20 +449,19 @@ class DeviceAPI:
         payload: AddDeviceRequest,
         user: GetCurrentUser,
         session: DBSession,
-        response: Response,
     ) -> StatusResponse:
-        if user.role == UserRole.ADMIN:
-            await self._add_device_record(payload, session)
 
-            await session.commit()
-
-            return StatusResponse(
-                message="Device has been added to the inventory and available for use."
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
             )
 
-        response.status_code = status.HTTP_403_FORBIDDEN
+        await self._add_device_record(payload, session)
+
+        await session.commit()
+
         return StatusResponse(
-            message="You don't have autherority to add device to the inventory."
+            message="Device has been added to the inventory and available for use."
         )
 
     async def update_device(
@@ -555,13 +554,15 @@ class DeviceAPI:
         device = assignment.device
         is_holder = holder.id == user.id
 
-        # Supervisor revoking access of their developer device
-        if user.role == UserRole.SUPERVISOR and holder.id != user.id:
-            # Verify the device's current holder belongs to the supervisor
-            is_their_developer = await session.scalar(
-                select(SupervisorDeveloper.id).where(
-                    SupervisorDeveloper.developer_id == payload.current_holder_id,
-                    SupervisorDeveloper.supervisor_id == user.id,
+        # Allowed: the holder (a return), an admin, or the holder's supervisor (a revoke).
+        if not is_holder and user.role != UserRole.ADMIN:
+            is_their_developer = (
+                user.role == UserRole.SUPERVISOR
+                and await session.scalar(
+                    select(SupervisorDeveloper.id).where(
+                        SupervisorDeveloper.developer_id == holder.id,
+                        SupervisorDeveloper.supervisor_id == user.id,
+                    )
                 )
             )
             if not is_their_developer:
