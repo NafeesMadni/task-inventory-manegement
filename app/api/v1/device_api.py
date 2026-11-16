@@ -554,6 +554,7 @@ class DeviceAPI:
         device = assignment.device
         is_holder = holder.id == user.id
 
+        # Frontend is not yet configured for supvervisor controlling their developer's devices access
         # Allowed: the holder (a return), an admin, or the holder's supervisor (a revoke).
         if not is_holder and user.role != UserRole.ADMIN:
             is_their_developer = (
