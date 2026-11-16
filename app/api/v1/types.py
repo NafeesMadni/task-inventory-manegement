@@ -50,6 +50,11 @@ class UserPartialUpdate(BaseModel):
     username: str | None = None
 
 
+class UpdatePassword(BaseModel):
+    old_password: str
+    new_password: str
+
+
 class SignupRequest(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=100)

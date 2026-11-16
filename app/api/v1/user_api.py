@@ -27,6 +27,7 @@ from app.api.v1.types import (
     LoginRequest,
     SignupRequest,
     StatusResponse,
+    UpdatePassword,
     UserPartialUpdate,
     UserRef,
     UserResponse,
@@ -103,6 +104,13 @@ class UserAPI:
             "",
             endpoint=self.update_user_info,
             methods=["PATCH"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/password",
+            endpoint=self.update_password,
+            methods=["PATCH"],
+            response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
 
@@ -456,6 +464,28 @@ class UserAPI:
             setattr(user, field, value)
 
         await session.commit()
+
+    async def update_password(
+        self, payload: UpdatePassword, user: GetCurrentUser, session: DBSession
+    ) -> StatusResponse:
+        if payload.new_password == payload.old_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Both passwords are same, please use different password!",
+            )
+
+        if user.hashed_password and AuthProvider.check_password(
+            payload.old_password, user.hashed_password
+        ):
+            user.hashed_password = AuthProvider.get_hashed_password(
+                payload.new_password
+            )
+            await session.commit()
+            return StatusResponse(message="Password updated successfully.")
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid password!"
+        )
 
     async def get_me(self, user: GetCurrentUser) -> UserResponse:
 

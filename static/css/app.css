@@ -665,6 +665,37 @@ textarea:focus {
   box-shadow: var(--shadow);
 }
 
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.profile-card {
+  padding: 24px;
+}
+
+.card-heading {
+  margin-bottom: 22px;
+}
+
+.card-heading h2 {
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+
+.card-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -982,6 +1013,10 @@ th {
 
   .panel-heading {
     align-items: flex-start;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
   }
 
   .log-row {
