@@ -119,6 +119,16 @@ class AddDeviceRequest(BaseModel):
     purchase_price: float
 
 
+class DevicePartialUpdate(BaseModel):
+    name: str | None = None
+    brand: str | None = None
+    ram_gb: int | None = None
+    ssd_gb: int | None = None
+    hdd_gb: int | None = None
+    processor: str | None = None
+    status: DeviceStatus | None = None
+
+
 class ProcessDeviceRequest(BaseModel):
     request_id: int
     remarks: str | None = None

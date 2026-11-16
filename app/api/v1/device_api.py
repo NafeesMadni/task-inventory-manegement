@@ -11,6 +11,7 @@ from app.api.v1.types import (
     AllDevicesRequestsResponse,
     Assignments,
     DeviceInfo,
+    DevicePartialUpdate,
     DeviceRef,
     DevicesHistory,
     HistorySummary,
@@ -97,6 +98,12 @@ class DeviceAPI:
             status_code=status.HTTP_200_OK,
         )
 
+        self.router.add_api_route(
+            "",
+            endpoint=self.update_device,
+            methods=["PATCH"],
+            status_code=status.HTTP_200_OK,
+        )
         self.router.add_api_route(
             "",
             endpoint=self.delete_device,
@@ -452,9 +459,29 @@ class DeviceAPI:
             message="You don't have autherority to add device to the inventory."
         )
 
+    async def update_device(
+        self,
+        device_id: Annotated[int, Query(...)],
+        payload: DevicePartialUpdate,
+        session: DBSession,
+    ):
+        device = await session.get(Device, device_id)
+
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
+            )
+
+        update_data = payload.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(device, field, value)
+
+        await session.commit()
+
     async def delete_device(
         self,
-        device_id: int,
+        device_id: Annotated[int, Query(...)],
         user: GetCurrentUser,
         session: DBSession,
     ):
