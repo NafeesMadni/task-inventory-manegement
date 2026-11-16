@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, computed_field, model_validator
 
 from app.database.models import (
     ApprovalDecision,
+    AssignmentReturnType,
     DeviceCondition,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -119,6 +120,15 @@ class AddDeviceRequest(BaseModel):
     purchase_price: float
 
 
+class DevicePartialUpdate(BaseModel):
+    name: str | None = None
+    brand: str | None = None
+    ram_gb: int | None = None
+    ssd_gb: int | None = None
+    hdd_gb: int | None = None
+    processor: str | None = None
+
+
 class ProcessDeviceRequest(BaseModel):
     request_id: int
     remarks: str | None = None
@@ -138,6 +148,12 @@ class ProcessDeviceRequest(BaseModel):
                 "device_specs must be None when the decision selected as rejected."
             )
         return self
+
+
+class ResetDeviceAccess(BaseModel):
+    device_id: int
+    current_holder_id: int
+    return_note: str | None = None
 
 
 class _RequestApprovals(BaseModel):
@@ -220,15 +236,20 @@ class Assignments(BaseModel):
     assigned_by: UserRef | None = None  # None = direct assignment or a deleted user
     scheduled_at: datetime
     assigned_at: datetime | None = None
+
+    returned_by: UserRef | None
+    return_type: AssignmentReturnType | None = None
+    return_note: str | None = None
     returned_at: datetime | None = None
     condition_on_issue: DeviceCondition | None = None
     condition_on_return: DeviceCondition | None = None
 
     @computed_field
     @property
-    def state(self) -> Literal["scheduled", "active", "returned"]:
-        if self.returned_at:
-            return "returned"
+    def state(self) -> Literal["scheduled", "active", "returned", "revoked"]:
+        if self.return_type:
+            return self.return_type.value
+
         return "active" if self.assigned_at else "scheduled"
 
 

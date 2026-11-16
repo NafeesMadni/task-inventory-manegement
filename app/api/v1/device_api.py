@@ -11,6 +11,7 @@ from app.api.v1.types import (
     AllDevicesRequestsResponse,
     Assignments,
     DeviceInfo,
+    DevicePartialUpdate,
     DeviceRef,
     DevicesHistory,
     HistorySummary,
@@ -18,6 +19,7 @@ from app.api.v1.types import (
     MyDevicesResponse,
     ProcessDeviceRequest,
     Repairs,
+    ResetDeviceAccess,
     SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
@@ -26,6 +28,7 @@ from app.api.v1.types import (
 )
 from app.database.models import (
     ApprovalDecision,
+    AssignmentReturnType,
     Device,
     DeviceAssignment,
     DeviceCondition,
@@ -35,6 +38,7 @@ from app.database.models import (
     DevicesRequest,
     DeviceStatus,
     RequestApproval,
+    SupervisorDeveloper,
     User,
     UserRole,
 )
@@ -53,6 +57,8 @@ class DeviceAPI:
         self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
+
+        # Search devices by options
         self.router.add_api_route(
             "/options",
             endpoint=self.get_search_options,
@@ -67,6 +73,8 @@ class DeviceAPI:
             response_model=list[DeviceRef],
             status_code=status.HTTP_200_OK,
         )
+
+        # Devices currently hold by Superbers/developers
         self.router.add_api_route(
             "/my-devices",
             endpoint=self.get_my_devices,
@@ -82,13 +90,36 @@ class DeviceAPI:
             status_code=status.HTTP_200_OK,
         )
 
+        # Device CRUD
         self.router.add_api_route(
-            "/add",
+            "",
             endpoint=self.add_device,
             methods=["POST"],
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
+        self.router.add_api_route(
+            "",
+            endpoint=self.update_device,
+            methods=["PATCH"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "",
+            endpoint=self.delete_device,
+            methods=["DELETE"],
+            status_code=status.HTTP_200_OK,
+        )
+
+        # Request CRUD
+        self.router.add_api_route(
+            "/reset-access",
+            endpoint=self.reset_device_access,
+            methods=["PATCH"],
+            response_model=StatusResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
         self.router.add_api_route(
             "/create-request",
             endpoint=self.create_device_request,
@@ -99,7 +130,7 @@ class DeviceAPI:
         self.router.add_api_route(
             "/all-requests",
             endpoint=self.get_devices_requests,
-            methods=["POST"],
+            methods=["GET"],
             response_model=list[AllDevicesRequestsResponse],
             status_code=status.HTTP_200_OK,
         )
@@ -251,6 +282,7 @@ class DeviceAPI:
                 selectinload(Device.assignments).options(
                     selectinload(DeviceAssignment.assigned_to_user),
                     selectinload(DeviceAssignment.assigned_by_user),
+                    selectinload(DeviceAssignment.returned_by_user),
                 ),
                 selectinload(Device.repairs)
                 .selectinload(DeviceRepair.request)
@@ -285,6 +317,9 @@ class DeviceAPI:
                     assigned_by=self._user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
+                    returned_by=self._user_ref(a.returned_by_user),
+                    return_type=a.return_type,
+                    return_note=a.return_note,
                     returned_at=a.returned_at,
                     condition_on_issue=a.condition_on_issue,
                     condition_on_return=a.condition_on_return,
@@ -414,20 +449,147 @@ class DeviceAPI:
         payload: AddDeviceRequest,
         user: GetCurrentUser,
         session: DBSession,
-        response: Response,
     ) -> StatusResponse:
-        if user.role == UserRole.ADMIN:
-            await self._add_device_record(payload, session)
 
-            await session.commit()
-
-            return StatusResponse(
-                message="Device has been added to the inventory and available for use."
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
             )
 
-        response.status_code = status.HTTP_403_FORBIDDEN
+        await self._add_device_record(payload, session)
+
+        await session.commit()
+
         return StatusResponse(
-            message="You don't have autherority to add device to the inventory."
+            message="Device has been added to the inventory and available for use."
+        )
+
+    async def update_device(
+        self,
+        device_id: Annotated[int, Query(...)],
+        payload: DevicePartialUpdate,
+        user: GetCurrentUser,
+        session: DBSession,
+    ):
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
+            )
+
+        device = await session.get(Device, device_id)
+
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
+            )
+
+        update_data = payload.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(device, field, value)
+
+        await session.commit()
+
+    async def delete_device(
+        self,
+        device_id: Annotated[int, Query(...)],
+        user: GetCurrentUser,
+        session: DBSession,
+    ):
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
+            )
+
+        device = await session.scalar(select(Device).where(Device.id == device_id))
+
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Device not found!"
+            )
+
+        if device.status != DeviceStatus.AVAILABLE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device isn't free.",
+            )
+
+        await session.delete(device)
+        await session.commit()
+
+    async def reset_device_access(
+        self,
+        payload: ResetDeviceAccess,
+        user: GetCurrentUser,
+        session: DBSession,
+    ) -> StatusResponse:
+        # The one active assignment of this device (the partial unique index allows at most one).
+        assignment = await session.scalar(
+            select(DeviceAssignment)
+            .options(
+                selectinload(DeviceAssignment.device),
+                selectinload(DeviceAssignment.assigned_to_user),
+            )
+            .where(
+                DeviceAssignment.device_id == payload.device_id,
+                DeviceAssignment.assigned_to == payload.current_holder_id,
+                DeviceAssignment.returned_at.is_(None),
+            )
+            .with_for_update()  # add low-level lock; preventing race-conditions
+        )
+
+        if not assignment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active assignment found for this device and holder. It may already have been returned or revoked.",
+            )
+
+        if assignment.assigned_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This device hasn't been handed over yet, so there is no access to revoke.",
+            )
+
+        holder = assignment.assigned_to_user
+        device = assignment.device
+        is_holder = holder.id == user.id
+
+        # Frontend is not yet configured for supvervisor controlling their developer's devices access
+        # Allowed: the holder (a return), an admin, or the holder's supervisor (a revoke).
+        if not is_holder and user.role != UserRole.ADMIN:
+            is_their_developer = (
+                user.role == UserRole.SUPERVISOR
+                and await session.scalar(
+                    select(SupervisorDeveloper.id).where(
+                        SupervisorDeveloper.developer_id == holder.id,
+                        SupervisorDeveloper.supervisor_id == user.id,
+                    )
+                )
+            )
+            if not is_their_developer:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You aren't authorized to revoke this access.",
+                )
+
+        assignment.returned_at = datetime.now(UTC)
+        assignment.returned_by = user.id
+        assignment.return_type = (
+            AssignmentReturnType.RETURNED if is_holder else AssignmentReturnType.REVOKED
+        )
+        assignment.return_note = payload.return_note
+        assignment.condition_on_return = device.condition
+
+        # Free the device.
+        if device.status == DeviceStatus.ASSIGNED:
+            device.status = DeviceStatus.AVAILABLE
+
+        await session.commit()
+
+        return StatusResponse(
+            message="Device returned."
+            if is_holder
+            else f"Access revoked from {holder.username}."
         )
 
     async def create_device_request(

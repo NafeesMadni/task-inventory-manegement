@@ -11,6 +11,7 @@ const DevicesPanel = (() => {
         let allDevices = [];   // whole fleet, used for the stat cards
         let results = [];      // result of the latest server-side search
         let options = { statuses: [], conditions: [] };
+        let editingDevice = null;
 
         /* ---------- Helpers ---------- */
 
@@ -21,7 +22,7 @@ const DevicesPanel = (() => {
 
         function tableMessage(text, isError = false) {
             $("devices-table").innerHTML =
-                `<tr><td colspan="6" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
+                `<tr><td colspan="7" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
         }
 
         /* ---------- Init ---------- */
@@ -38,6 +39,20 @@ const DevicesPanel = (() => {
             $("add-form").addEventListener("submit", submitAddDevice);
             $("add-dialog").addEventListener("click", event => {
                 if (event.target === event.currentTarget) closeAddDialog(); // backdrop click
+            });
+
+            $("edit-close").addEventListener("click", closeEditDialog);
+            $("edit-cancel").addEventListener("click", closeEditDialog);
+            $("edit-form").addEventListener("submit", submitEditDevice);
+            $("edit-dialog").addEventListener("click", event => {
+                if (event.target === event.currentTarget) closeEditDialog();
+            });
+            $("devices-table").addEventListener("click", event => {
+                const button = event.target.closest("button[data-edit-device]");
+                if (!button) return;
+
+                const device = allDevices.find(item => String(item.id) === button.dataset.editDevice);
+                if (device) openEditDialog(device);
             });
 
             // Status / condition are searched on the server; text search and sorting happen locally.
@@ -196,8 +211,85 @@ const DevicesPanel = (() => {
                         ${addedTime ? `<div class="device-sub">${addedTime}</div>` : ""}
                     </td>
                     <td class="muted">#${escapeHTML(device.id)}</td>
+                    <td><button class="btn btn-sm" data-edit-device="${escapeHTML(device.id)}">Edit</button></td>
                 </tr>`;
             }).join("");
+        }
+
+        /* ---------- Edit device ---------- */
+
+        function openEditDialog(device) {
+            editingDevice = device;
+            const form = $("edit-form");
+            form.reset();
+
+            form.name.value = device.name ?? "";
+            form.brand.value = device.brand ?? "";
+            form.processor.value = device.processor ?? "";
+            form.ram_gb.value = device.ram_gb ?? 0;
+            form.ssd_gb.value = device.ssd_gb ?? 0;
+            form.hdd_gb.value = device.hdd_gb ?? 0;
+
+            $("edit-message").className = "message";
+            $("edit-submit").disabled = false;
+            $("edit-submit").textContent = "Save changes";
+            $("edit-dialog").showModal();
+            $("edit-name").focus();
+        }
+
+        function closeEditDialog() {
+            editingDevice = null;
+            $("edit-dialog").close();
+        }
+
+        function showEditError(text) {
+            const box = $("edit-message");
+            box.textContent = text;
+            box.className = "message show error";
+        }
+
+        async function submitEditDevice(event) {
+            event.preventDefault();
+            if (!editingDevice) return;
+
+            const form = event.currentTarget;
+            if (!form.reportValidity()) return;
+
+            const payload = {
+                name: form.name.value.trim(),
+                brand: form.brand.value.trim(),
+                processor: form.processor.value.trim(),
+                ram_gb: Number(form.ram_gb.value),
+                ssd_gb: Number(form.ssd_gb.value),
+                hdd_gb: Number(form.hdd_gb.value),
+            };
+            const button = $("edit-submit");
+            button.disabled = true;
+            button.textContent = "Saving...";
+            $("edit-message").className = "message";
+
+            try {
+                const response = await api(`/device?device_id=${encodeURIComponent(editingDevice.id)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (!response) return;
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(addErrorMessage(result, response.status));
+
+                const name = payload.name;
+                closeEditDialog();
+                toast(result.message || `${name} updated.`);
+                await refresh();
+
+            } catch (error) {
+                showEditError(error instanceof TypeError ? "Unable to connect to the server." : error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = "Save changes";
+            }
         }
 
         /* ---------- Add device ---------- */
@@ -272,7 +364,7 @@ const DevicesPanel = (() => {
             $("add-message").className = "message";
 
             try {
-                const response = await api("/device/add", {
+                const response = await api("/device", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),

@@ -3,11 +3,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.models.base import Base, enum_check_constraint, enum_column
-from app.database.models.enums import DeviceCondition
+from app.database.models.enums import AssignmentReturnType, DeviceCondition
 
 if TYPE_CHECKING:
     from app.database.models import Device, DevicesRequest, User
@@ -31,6 +39,14 @@ class DeviceAssignment(Base):
         ),
         # A request can generate only one assignment
         UniqueConstraint("request_id", name="uq_device_assignment_request"),
+        # an assignment is ended exactly when it has a return type
+        CheckConstraint(
+            "(returned_at IS NULL) = (return_type IS NULL)",
+            name="ck_device_assignments_return_consistent",
+        ),
+        enum_check_constraint(
+            AssignmentReturnType, "return_type", "ck_device_assignments_return_type"
+        ),
         enum_check_constraint(
             DeviceCondition,
             "condition_on_issue",
@@ -75,6 +91,16 @@ class DeviceAssignment(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    returned_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    return_type: Mapped[AssignmentReturnType | None] = mapped_column(
+        enum_column(AssignmentReturnType, "assignment_return_type"), nullable=True
+    )
+
+    return_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     condition_on_issue: Mapped[DeviceCondition | None] = mapped_column(
         enum_column(DeviceCondition, "device_condition_issue"), nullable=True
     )
@@ -93,6 +119,8 @@ class DeviceAssignment(Base):
     assigned_by_user: Mapped[User | None] = relationship(
         back_populates="device_assignments_assigned_by", foreign_keys=[assigned_by]
     )
+
+    returned_by_user: Mapped[User | None] = relationship(foreign_keys=[returned_by])
 
     request: Mapped[DevicesRequest | None] = relationship(
         back_populates="assignment", foreign_keys=[request_id]

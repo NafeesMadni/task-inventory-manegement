@@ -5,9 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Devices | Device Portal</title>
-    <link rel="stylesheet" href="/static/css/app.css?v=20261115a">
-    <link rel="stylesheet" href="/static/css/history.css?v=20261115a">
-    <link rel="stylesheet" href="/static/css/voice.css?v=20261115a">
+    <link rel="stylesheet" href="/static/css/app.css?v=20261116a">
+    <link rel="stylesheet" href="/static/css/history.css?v=20261116a">
+    <link rel="stylesheet" href="/static/css/voice.css?v=20261116a">
 </head>
 
 <body>
@@ -84,6 +84,7 @@
                                 <th>Condition</th>
                                 <th>Added</th>
                                 <th>ID</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="devices-table"></tbody>
@@ -428,6 +429,59 @@
             </div>
         </form>
     </dialog>
+    <dialog class="modal" id="edit-dialog">
+        <form id="edit-form" novalidate>
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow">Inventory</p>
+                    <h2>Edit device</h2>
+                </div>
+                <button type="button" class="icon-btn" id="edit-close" aria-label="Close">&times;</button>
+            </div>
+
+            <p class="subtitle">Update the device details or its inventory status.</p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-name">Device name</label>
+                    <input type="text" id="edit-name" name="name" maxlength="150" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-brand">Brand</label>
+                    <input type="text" id="edit-brand" name="brand" maxlength="100" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="edit-processor">Processor</label>
+                    <input type="text" id="edit-processor" name="processor" required>
+                </div>
+            </div>
+
+            <div class="form-row three">
+                <div class="form-group">
+                    <label for="edit-ram">RAM (GB)</label>
+                    <input type="number" id="edit-ram" name="ram_gb" min="0" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-ssd">SSD (GB)</label>
+                    <input type="number" id="edit-ssd" name="ssd_gb" min="0" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-hdd">HDD (GB)</label>
+                    <input type="number" id="edit-hdd" name="hdd_gb" min="0" step="1" required>
+                </div>
+            </div>
+
+            <div id="edit-message" class="message" role="alert"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-lg" id="edit-cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-lg" id="edit-submit">Save changes</button>
+            </div>
+        </form>
+    </dialog>
     <dialog class="modal" id="req-dialog">
         <form id="req-form" novalidate>
             <div class="modal-head">
@@ -568,16 +622,44 @@
         </form>
     </dialog>
 
-    <script src="/static/js/shell.js?v=20261115a"></script>
-    <script src="/static/js/tree.js?v=20261115a"></script>
-    <script src="/static/js/request-ui.js?v=20261115a"></script>
-    <script src="/static/js/device-ui.js?v=20261115a"></script>
-    <script src="/static/js/voice-ui.js?v=20261115a"></script>
-    <script src="/static/js/panels/devices.js?v=20261115a"></script>
-    <script src="/static/js/panels/history.js?v=20261115a"></script>
-    <script src="/static/js/panels/my-devices.js?v=20261115a"></script>
-    <script src="/static/js/panels/requests.js?v=20261115a"></script>
-    <script src="/static/js/panels/approvals.js?v=20261115a"></script>
+    <!-- Return a device / revoke access (filled by access-ui.js) -->
+    <dialog class="modal" id="rs-dialog">
+        <form id="rs-form" novalidate>
+            <div class="modal-head">
+                <div>
+                    <p class="eyebrow" id="rs-eyebrow">Device</p>
+                    <h2 id="rs-title">Return this device?</h2>
+                </div>
+                <button type="button" class="icon-btn" id="rs-close" aria-label="Close">&times;</button>
+            </div>
+
+            <p class="subtitle" id="rs-text"></p>
+
+            <div class="form-group">
+                <label for="rs-note" id="rs-note-label">Note (optional)</label>
+                <textarea id="rs-note" name="return_note" maxlength="500"></textarea>
+            </div>
+
+            <div id="rs-message" class="message" role="alert"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-lg" id="rs-cancel">Cancel</button>
+                <button type="submit" class="btn btn-lg" id="rs-submit">Confirm</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/js/shell.js?v=20261116a"></script>
+    <script src="/static/js/tree.js?v=20261116a"></script>
+    <script src="/static/js/request-ui.js?v=20261116a"></script>
+    <script src="/static/js/device-ui.js?v=20261116a"></script>
+    <script src="/static/js/voice-ui.js?v=20261116a"></script>
+    <script src="/static/js/access-ui.js?v=20261116a"></script>
+    <script src="/static/js/panels/devices.js?v=20261116c"></script>
+    <script src="/static/js/panels/history.js?v=20261116a"></script>
+    <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
+    <script src="/static/js/panels/requests.js?v=20261116a"></script>
+    <script src="/static/js/panels/approvals.js?v=20261116a"></script>
     <script>
         const { $, escapeHTML, toast } = Portal;
 
