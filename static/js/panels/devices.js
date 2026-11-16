@@ -272,7 +272,7 @@ const DevicesPanel = (() => {
             $("add-message").className = "message";
 
             try {
-                const response = await api("/device/add", {
+                const response = await api("/device", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),

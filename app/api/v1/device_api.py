@@ -90,10 +90,17 @@ class DeviceAPI:
         )
 
         self.router.add_api_route(
-            "/add",
+            "",
             endpoint=self.add_device,
             methods=["POST"],
             response_model=StatusResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
+        self.router.add_api_route(
+            "",
+            endpoint=self.delete_device,
+            methods=["DELETE"],
             status_code=status.HTTP_200_OK,
         )
         self.router.add_api_route(
@@ -444,6 +451,33 @@ class DeviceAPI:
         return StatusResponse(
             message="You don't have autherority to add device to the inventory."
         )
+
+    async def delete_device(
+        self,
+        device_id: int,
+        user: GetCurrentUser,
+        session: DBSession,
+    ):
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admin only!"
+            )
+
+        device = await session.scalar(select(Device).where(Device.id == device_id))
+
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Device not found!"
+            )
+
+        if device.status != DeviceStatus.AVAILABLE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device isn't free.",
+            )
+
+        await session.delete(device)
+        await session.commit()
 
     async def reset_device_access(
         self,
