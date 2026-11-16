@@ -140,6 +140,12 @@ class ProcessDeviceRequest(BaseModel):
         return self
 
 
+class ResetDeviceAccess(BaseModel):
+    device_id: int
+    current_holder_id: int
+    return_note: str | None = None
+
+
 class _RequestApprovals(BaseModel):
     level: int
     approver_username: str

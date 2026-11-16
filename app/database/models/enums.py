@@ -51,3 +51,8 @@ class RepairStatus(str, Enum):
     SCHEDULED = "scheduled"
     IN_PROGRESS = "in_progress"  # should be removed; no purpose
     COMPLETED = "completed"
+
+
+class AssignmentReturnType(str, Enum):
+    RETURNED = "returned"  # the device was handed back
+    REVOKED = "revoked"  # admin/supervisor took it back

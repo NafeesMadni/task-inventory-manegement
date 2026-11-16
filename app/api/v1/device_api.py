@@ -18,6 +18,7 @@ from app.api.v1.types import (
     MyDevicesResponse,
     ProcessDeviceRequest,
     Repairs,
+    ResetDeviceAccess,
     SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
@@ -38,6 +39,8 @@ from app.database.models import (
     User,
     UserRole,
 )
+from app.database.models.enums import AssignmentReturnType
+from app.database.models.supervisor_developer import SupervisorDeveloper
 from app.dependencies import DBSession, GetCurrentUser
 from app.services import EmailManager
 from app.services.tasks_manager import (
@@ -53,6 +56,8 @@ class DeviceAPI:
         self.email_manager = EmailManager()
 
     def _register_routes(self) -> None:
+
+        # Search devices by options
         self.router.add_api_route(
             "/options",
             endpoint=self.get_search_options,
@@ -67,6 +72,8 @@ class DeviceAPI:
             response_model=list[DeviceRef],
             status_code=status.HTTP_200_OK,
         )
+
+        # Devices currently hold by Superbers/developers
         self.router.add_api_route(
             "/my-devices",
             endpoint=self.get_my_devices,
@@ -89,6 +96,14 @@ class DeviceAPI:
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
+        self.router.add_api_route(
+            "/reset-access",
+            endpoint=self.reset_device_access,
+            methods=["PATCH"],
+            response_model=StatusResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
         self.router.add_api_route(
             "/create-request",
             endpoint=self.create_device_request,
@@ -428,6 +443,78 @@ class DeviceAPI:
         response.status_code = status.HTTP_403_FORBIDDEN
         return StatusResponse(
             message="You don't have autherority to add device to the inventory."
+        )
+
+    async def reset_device_access(
+        self,
+        payload: ResetDeviceAccess,
+        user: GetCurrentUser,
+        session: DBSession,
+    ):
+        # The one active assignment of this device (the partial unique index allows at most one).
+        assignment = await session.scalar(
+            select(DeviceAssignment)
+            .options(
+                selectinload(DeviceAssignment.device),
+                selectinload(DeviceAssignment.assigned_to_user),
+            )
+            .where(
+                DeviceAssignment.device_id == payload.device_id,
+                DeviceAssignment.assigned_to == payload.current_holder_id,
+                DeviceAssignment.returned_at.is_(None),
+            )
+            .with_for_update()  # add low-level lock; preventing race-conditions
+        )
+
+        if not assignment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No active assignment found for this device and holder. It may already have been returned or revoked.",
+            )
+
+        if assignment.assigned_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This device hasn't been handed over yet, so there is no access to revoke.",
+            )
+
+        holder = assignment.assigned_to_user
+        device = assignment.device
+        is_holder = holder.id == user.id
+
+        # Supervisor revoking access of their developer device
+        if user.role == UserRole.SUPERVISOR and holder.id != user.id:
+            # Verify the device's current holder belongs to the supervisor
+            is_their_developer = await session.scalar(
+                select(SupervisorDeveloper.id).where(
+                    SupervisorDeveloper.developer_id == payload.current_holder_id,
+                    SupervisorDeveloper.supervisor_id == user.id,
+                )
+            )
+            if not is_their_developer:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You aren't authorized to revoke this access.",
+                )
+
+        assignment.returned_at = datetime.now(UTC)
+        assignment.returned_by = user.id
+        assignment.return_type = (
+            AssignmentReturnType.RETURNED if is_holder else AssignmentReturnType.REVOKED
+        )
+        assignment.return_note = payload.return_note
+        assignment.condition_on_return = device.condition
+
+        # Free the device.
+        if device.status == DeviceStatus.ASSIGNED:
+            device.status = DeviceStatus.AVAILABLE
+
+        await session.commit()
+
+        return StatusResponse(
+            message="Device returned."
+            if is_holder
+            else f"Access revoked from {holder.username}."
         )
 
     async def create_device_request(
