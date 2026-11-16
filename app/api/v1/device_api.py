@@ -28,6 +28,7 @@ from app.api.v1.types import (
 )
 from app.database.models import (
     ApprovalDecision,
+    AssignmentReturnType,
     Device,
     DeviceAssignment,
     DeviceCondition,
@@ -37,11 +38,10 @@ from app.database.models import (
     DevicesRequest,
     DeviceStatus,
     RequestApproval,
+    SupervisorDeveloper,
     User,
     UserRole,
 )
-from app.database.models.enums import AssignmentReturnType
-from app.database.models.supervisor_developer import SupervisorDeveloper
 from app.dependencies import DBSession, GetCurrentUser
 from app.services import EmailManager
 from app.services.tasks_manager import (
@@ -90,6 +90,7 @@ class DeviceAPI:
             status_code=status.HTTP_200_OK,
         )
 
+        # Device CRUD
         self.router.add_api_route(
             "",
             endpoint=self.add_device,
@@ -97,7 +98,6 @@ class DeviceAPI:
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
-
         self.router.add_api_route(
             "",
             endpoint=self.update_device,
@@ -110,6 +110,8 @@ class DeviceAPI:
             methods=["DELETE"],
             status_code=status.HTTP_200_OK,
         )
+
+        # Request CRUD
         self.router.add_api_route(
             "/reset-access",
             endpoint=self.reset_device_access,
@@ -128,7 +130,7 @@ class DeviceAPI:
         self.router.add_api_route(
             "/all-requests",
             endpoint=self.get_devices_requests,
-            methods=["POST"],
+            methods=["GET"],
             response_model=list[AllDevicesRequestsResponse],
             status_code=status.HTTP_200_OK,
         )

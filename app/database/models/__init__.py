@@ -7,6 +7,7 @@ from app.database.models.device_repair import DeviceRepair
 from app.database.models.device_request import DevicesRequest
 from app.database.models.enums import (
     ApprovalDecision,
+    AssignmentReturnType,
     DeviceCondition,
     DeviceRequestStatus,
     DeviceRequestType,
@@ -23,6 +24,7 @@ from app.database.models.user import User, get_user_loading_options
 
 __all__ = [
     "ApprovalDecision",
+    "AssignmentReturnType",
     "Base",
     "Device",
     "DeviceAssignment",

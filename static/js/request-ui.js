@@ -6,9 +6,9 @@
 const RequestUI = (() => {
     const { api, escapeHTML, pretty } = Portal;
 
-    // The requests list endpoint (relative to /api/v1). Change the method here if your route isn't a POST.
+    // The requests list endpoint (relative to /api/v1). 
     const ALL_REQUESTS_PATH = "/device/all-requests";
-    const ALL_REQUESTS_METHOD = "POST";
+    const ALL_REQUESTS_METHOD = "GET";
 
     // Who gets what (see get_devices_requests on the backend):
     //   admin                      -> every request (the flag is ignored)
