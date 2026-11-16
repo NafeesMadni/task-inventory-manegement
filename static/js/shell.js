@@ -25,6 +25,7 @@ const Portal = (() => {
     ];
 
     let role = "pending";
+    let currentUser = null;
 
     /* ---------- Helpers ---------- */
 
@@ -101,15 +102,61 @@ const Portal = (() => {
                         <span class="avatar sm" id="user-avatar">·</span>
                         <span class="user-name" id="user-info">Loading...</span>
                     </div>
+                    <button class="btn" id="profile-btn">Profile</button>
                     <a href="/create-join-request" class="btn btn-primary hidden" id="request-access-btn">Request access</a>
                     <button class="btn" id="logout-btn">Logout</button>
                 </div>
-            </div>`;
+            </div>
+
+            <dialog class="modal" id="profile-dialog">
+                <form id="profile-form" novalidate>
+                    <div class="modal-head">
+                        <div>
+                            <p class="eyebrow">Account</p>
+                            <h2>Edit profile</h2>
+                        </div>
+                        <button type="button" class="icon-btn" id="profile-close" aria-label="Close">&times;</button>
+                    </div>
+
+                    <p class="subtitle">Update the information shown across the portal.</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="profile-first-name">First name</label>
+                            <input type="text" id="profile-first-name" name="first_name" maxlength="100" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-last-name">Last name</label>
+                            <input type="text" id="profile-last-name" name="last_name" maxlength="100" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="profile-username">Username</label>
+                        <input type="text" id="profile-username" name="username" minlength="3" maxlength="100" required>
+                    </div>
+
+                    <div id="profile-message" class="message" role="alert"></div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-lg" id="profile-cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-lg" id="profile-submit">Save changes</button>
+                    </div>
+                </form>
+            </dialog>`;
 
         $("logout-btn").addEventListener("click", logout);
+        $("profile-btn").addEventListener("click", openProfile);
+        $("profile-close").addEventListener("click", closeProfile);
+        $("profile-cancel").addEventListener("click", closeProfile);
+        $("profile-form").addEventListener("submit", submitProfile);
+        $("profile-dialog").addEventListener("click", event => {
+            if (event.target === event.currentTarget) closeProfile();
+        });
     }
 
     function fillUser(user) {
+        currentUser = user;
         const first = user.first_name || "";
         const last = user.last_name || "";
 
@@ -135,6 +182,79 @@ const Portal = (() => {
             badge.textContent = role;
             badge.classList.add(role);
         });
+    }
+
+    function openProfile() {
+        if (!currentUser) return;
+
+        const form = $("profile-form");
+        form.first_name.value = currentUser.first_name || "";
+        form.last_name.value = currentUser.last_name || "";
+        form.username.value = currentUser.username || "";
+        $("profile-message").className = "message";
+        $("profile-submit").disabled = false;
+        $("profile-submit").textContent = "Save changes";
+        $("profile-dialog").showModal();
+        $("profile-first-name").focus();
+    }
+
+    function closeProfile() {
+        $("profile-dialog").close();
+    }
+
+    function showProfileError(message) {
+        const box = $("profile-message");
+        box.textContent = message;
+        box.className = "message show error";
+    }
+
+    async function submitProfile(event) {
+        event.preventDefault();
+        if (!currentUser) return;
+
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+
+        const values = {
+            first_name: form.first_name.value.trim(),
+            last_name: form.last_name.value.trim(),
+            username: form.username.value.trim(),
+        };
+        const payload = Object.fromEntries(Object.entries(values).filter(
+            ([field, value]) => value !== String(currentUser[field] || "")
+        ));
+
+        if (!Object.keys(payload).length) {
+            closeProfile();
+            return;
+        }
+
+        const button = $("profile-submit");
+        button.disabled = true;
+        button.textContent = "Saving...";
+        $("profile-message").className = "message";
+
+        try {
+            const response = await api("/user", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            if (!response) return;
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(errorMessage(result, response.status));
+
+            fillUser({ ...currentUser, ...payload });
+            closeProfile();
+            toast(result.message || "Profile updated.");
+
+        } catch (error) {
+            showProfileError(error instanceof TypeError ? "Unable to connect to the server." : error.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = "Save changes";
+        }
     }
 
     async function logout() {

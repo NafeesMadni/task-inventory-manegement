@@ -27,6 +27,7 @@ from app.api.v1.types import (
     LoginRequest,
     SignupRequest,
     StatusResponse,
+    UserPartialUpdate,
     UserRef,
     UserResponse,
 )
@@ -94,6 +95,14 @@ class UserAPI:
             endpoint=self.auth_callback,
             name="auth_callback",
             methods=["GET"],
+            status_code=status.HTTP_200_OK,
+        )
+
+        # Update user info
+        self.router.add_api_route(
+            "",
+            endpoint=self.update_user_info,
+            methods=["PATCH"],
             status_code=status.HTTP_200_OK,
         )
 
@@ -424,6 +433,29 @@ class UserAPI:
             user.id, request, redirect, session
         )  # settng cookie on the redirect response
         return redirect
+
+    async def update_user_info(
+        self, payload: UserPartialUpdate, user: GetCurrentUser, session: DBSession
+    ):
+        if await session.scalar(select(User).where(User.username == payload.username)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists.",
+            )
+
+        user = await session.get(User, user.id)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found!"
+            )
+
+        update_data = payload.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(user, field, value)
+
+        await session.commit()
 
     async def get_me(self, user: GetCurrentUser) -> UserResponse:
 

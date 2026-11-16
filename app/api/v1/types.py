@@ -44,6 +44,12 @@ class DeviceRef(BaseModel):
 # -----------------------------
 # USER ENDPOINT MODELS
 # -----------------------------
+class UserPartialUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
+
+
 class SignupRequest(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=100)
