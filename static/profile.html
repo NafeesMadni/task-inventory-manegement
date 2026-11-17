@@ -7,7 +7,8 @@
     <title>Profile | Device Portal</title>
     <link rel="stylesheet" href="/static/css/app.css?v=20261116c">
     <script src="/static/js/shell.js?v=20261116c"></script>
-    <script src="/static/js/profile-ui.js?v=20261116a" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" defer></script>
+    <script src="/static/js/profile-ui.js?v=20261117b" defer></script>
 </head>
 
 <body>
@@ -22,7 +23,7 @@
                 <div>
                     <p class="eyebrow">Account</p>
                     <h1>Profile <span class="role-badge" id="profile-role"></span></h1>
-                    <p class="subtitle">Manage your account information and password.</p>
+                    <p class="subtitle">Manage your account information, password, and sign-in security.</p>
                 </div>
             </div>
 
@@ -99,6 +100,46 @@
                             <button type="submit" class="btn btn-primary btn-lg" id="password-submit">Update password</button>
                         </div>
                     </form>
+                </section>
+
+                <section class="card profile-card">
+                    <div class="card-heading">
+                        <h2>Two-factor authentication</h2>
+                        <p id="twofa-description">Add an authenticator app to protect your account.</p>
+                    </div>
+
+                    <div id="twofa-disabled">
+                        <button type="button" class="btn btn-primary btn-lg" id="twofa-setup">Set up two-factor authentication</button>
+                    </div>
+
+                    <div class="hidden" id="twofa-enrollment">
+                        <p class="field-help">Scan this code with your authenticator app, then enter the current six-digit code.</p>
+                        <div class="twofa-qr" id="twofa-qr" aria-label="Two-factor authentication setup QR code"></div>
+                        <p class="field-help">Can't scan the code? Add an account manually with this setup key.</p>
+                        <div class="form-group">
+                            <label for="twofa-secret">Setup key</label>
+                            <div class="copy-field">
+                                <input type="text" id="twofa-secret" readonly>
+                                <button type="button" class="btn" id="twofa-copy">Copy</button>
+                            </div>
+                        </div>
+
+                        <form id="twofa-form" novalidate>
+                            <div class="form-group">
+                                <label for="twofa-code">Verification code</label>
+                                <input type="text" id="twofa-code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary btn-lg" id="twofa-activate">Activate two-factor authentication</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="hidden" id="twofa-enabled">
+                        <span class="security-status">Enabled</span>
+                    </div>
+
+                    <div id="twofa-message" class="message" role="alert"></div>
                 </section>
             </div>
         </section>

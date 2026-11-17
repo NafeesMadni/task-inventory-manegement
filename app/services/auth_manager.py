@@ -1,13 +1,21 @@
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from uuid import uuid4
 
 import bcrypt
 import jwt
+import pyotp
+from cryptography.fernet import Fernet
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+class TokenPurpose(StrEnum):
+    ACCESS = "access"
+    TWO_FA_VERIFICATION = "2fa_verification"
 
 
 class AuthProvider:
@@ -32,15 +40,16 @@ class AuthProvider:
 
 class JWTProvider:
     @staticmethod
-    def create_access_token(user_id: int) -> tuple[str, str]:
+    def create_token(
+        user_id: int, purpose: TokenPurpose, exp_minutes: int
+    ) -> tuple[str, str]:
         session_id = str(uuid4())
-        expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
+        expires_at = datetime.now(UTC) + timedelta(minutes=exp_minutes)
 
         payload = {
             "sub": str(user_id),
             "jti": session_id,
+            "purpose": purpose,
             "exp": expires_at,
         }
 
@@ -51,7 +60,7 @@ class JWTProvider:
         ), session_id
 
     @staticmethod
-    def decode_access_token(token: str) -> dict:
+    def decode_token(token: str) -> dict:
         try:
             return jwt.decode(
                 jwt=token,
@@ -70,3 +79,32 @@ class JWTProvider:
                 detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+
+class TwoFAProvider:
+    def __init__(self):
+        self.fernet = Fernet(settings.TWO_FACTOR_ENCRYPTION_KEY.encode())
+
+    def generate_secret(self) -> str:
+        """Generates a random 32-character base32 secret key."""
+        return pyotp.random_base32()
+
+    def get_provisioning_uri(
+        self, secret: str, user_email: str, issuer_name: str
+    ) -> str:
+        """Generates the otpauth:// URI used by QR code generators and authenticator apps."""
+        totp = pyotp.TOTP(secret)  # type: ignore
+        return totp.provisioning_uri(name=user_email, issuer_name=issuer_name)
+
+    def encrypt_2fa_secret(self, secret: str) -> str:
+        return self.fernet.encrypt(secret.encode()).decode()
+
+    def decrypt_2fa_secret(self, encrypted_secret: str) -> str:
+        return self.fernet.decrypt(encrypted_secret.encode()).decode()
+
+    def verify_totp_code(self, secret: str, code: str) -> bool:
+        """Verifies a 6-digit TOTP code against the user's secret."""
+        totp = pyotp.TOTP(secret)  # type: ignore
+
+        # Set valid_window=1 allows a 30-second buffer before/after for minor clock drift
+        return totp.verify(code)

@@ -696,6 +696,48 @@ textarea:focus {
   justify-content: flex-end;
 }
 
+.copy-field {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-field input {
+  min-width: 0;
+}
+
+.security-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.security-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.twofa-qr {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0;
+}
+
+.twofa-qr img,
+.twofa-qr canvas {
+  width: 180px;
+  height: 180px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;

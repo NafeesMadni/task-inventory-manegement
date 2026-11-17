@@ -10,6 +10,7 @@ dependencies = [
     "authlib>=1.9.5",
     "bcrypt>=5.0.0",
     "celery>=5.7.0",
+    "cryptography>=50.0.2",
     "email-validator>=2.3.0",
     "fastapi-cloud-cli>=0.28.0",
     "fastapi-redis-sdk>=0.8.1",
@@ -21,6 +22,7 @@ dependencies = [
     "openai-whisper>=20250625",
     "pydantic-settings>=2.15.0",
     "pyjwt>=2.15.1",
+    "pyotp>=2.12.0",
     "python-multipart>=0.0.32",
     "sqlalchemy[asyncio]>=2.1.1",
 ]

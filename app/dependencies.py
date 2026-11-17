@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.database.db import get_sessionmaker
 from app.database.models import LoginHistory, User, get_user_loading_options
 from app.services import JWTProvider
+from app.services.auth_manager import TokenPurpose
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
@@ -33,11 +34,15 @@ async def get_current_user(
             detail="Session expired, please login again.",
         )
 
-    payload = JWTProvider.decode_access_token(token)
+    payload = JWTProvider.decode_token(token)
 
     try:
         user_id = int(payload["sub"])
         session_id = payload["jti"]
+
+        if payload["purpose"] != TokenPurpose.ACCESS:
+            raise TypeError
+
     except KeyError, TypeError, ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

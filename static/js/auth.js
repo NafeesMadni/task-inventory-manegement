@@ -160,6 +160,10 @@ async function submitAuthForm({
 
         showMessage(data.message || successMessage, "success");
 
+        if (data.redirect_url === "/2fa/verify" && payload.email) {
+            sessionStorage.setItem("twofa-email", payload.email);
+        }
+
         window.location.replace(
             data.redirect_url ||
             (awaitingApproval ? JOIN_REQUEST_URL : DASHBOARD_URL)

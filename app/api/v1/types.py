@@ -63,6 +63,15 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+class Setup2FAResponse(BaseModel):
+    uri: str
+
+
+class OTPVerifyRequest(BaseModel):
+    email: str  # Email
+    code: str
+
+
 class CreateJoinReqRequest(BaseModel):
     requested_role: UserRole = Field(default=UserRole.DEVELOPER)
     requested_from: int
@@ -81,6 +90,7 @@ class UserResponse(BaseModel):
     username: str
     role: UserRole | None
     email: EmailStr
+    is_2fa_enabled: bool
 
 
 class AuthResponse(BaseModel):
