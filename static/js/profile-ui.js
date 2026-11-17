@@ -216,9 +216,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const response = await api("/user/2fa/activate", {
-                method: "POST",
+                method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code: form.code.value.trim() }),
+                body: JSON.stringify({ email: user.email, code: form.code.value.trim() }),
             });
             if (!response) return;
 

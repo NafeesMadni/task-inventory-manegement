@@ -15,17 +15,17 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from redis_fastapi import RateLimitBackendDep
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
-    Activate2FARequest,
     ActiveApprovalsResponse,
     AuthResponse,
     CreateJoinReqRequest,
     JoinRequestsResponse,
     LoginHistoryResponse,
     LoginRequest,
+    OTPVerifyRequest,
     Setup2FAResponse,
     SignupRequest,
     StatusResponse,
@@ -45,6 +45,7 @@ from app.database.models import (
 )
 from app.dependencies import DBSession, GetCurrentUser, VerifyTurnstile
 from app.services import AuthProvider, EmailManager, JWTProvider, TwoFAProvider
+from app.services.auth_manager import TokenPurpose
 
 
 class UserAPI:
@@ -114,6 +115,13 @@ class UserAPI:
             "/2fa/activate",
             endpoint=self.activate_2fa,
             methods=["PATCH"],
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/2fa/verify",
+            endpoint=self.verify_2fa,
+            methods=["POST"],
+            response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
         )
 
@@ -198,8 +206,12 @@ class UserAPI:
         user_id: int, request: Request, response: Response, session: DBSession
     ) -> None:
 
-        max_age = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        access_token, session_id = JWTProvider.create_access_token(user_id)
+        exp_minutes = get_settings().ACCESS_TOKEN_EXPIRE_MINUTES
+        max_age = exp_minutes * 60
+
+        access_token, session_id = JWTProvider.create_token(
+            user_id, TokenPurpose.ACCESS, exp_minutes
+        )
 
         login_history = LoginHistory(
             user_id=user_id,
@@ -222,6 +234,25 @@ class UserAPI:
         )
 
     @staticmethod
+    async def set_2fa_token(user_id: int, response: Response) -> None:
+        exp_minutes = 5
+        max_age = exp_minutes * 60
+
+        pre_auth_token, _ = JWTProvider.create_token(
+            user_id, TokenPurpose.TWO_FA_VERIFICATION, exp_minutes
+        )
+
+        response.set_cookie(
+            key="pre_auth_token",
+            value=pre_auth_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=max_age,
+            path="/api/v1/user/2fa/verify",
+        )
+
+    @staticmethod
     async def delete_access_token(
         user_id: int, request: Request, response: Response, session: DBSession
     ) -> None:
@@ -229,7 +260,7 @@ class UserAPI:
         token = request.cookies.get("access_token")
 
         if token:
-            payload = JWTProvider.decode_access_token(token)
+            payload = JWTProvider.decode_token(token)
             session_id = payload["jti"]
 
             login_history = await session.scalar(
@@ -370,9 +401,11 @@ class UserAPI:
         await session.flush()
         await session.commit()
 
-        # if user.is_2fa_enabled:
-        #     # set cookies after successful 2FA verification
-        #     return AuthResponse(message=message, redirect_url=redirect_url)
+        if user.is_2fa_enabled:
+            await self.set_2fa_token(user.id, response)
+
+            # set access cookies on successful 2FA verification
+            return AuthResponse(message="2FA required!", redirect_url="/2fa/verify")
 
         await self.set_access_token(user.id, request, response, session)
 
@@ -457,11 +490,12 @@ class UserAPI:
         else:
             target = "/dashboard"
 
-        redirect = to(target)
+        redirect = to("/2fa/verify") if user.is_2fa_enabled else to(target)
 
-        await self.set_access_token(
-            user.id, request, redirect, session
-        )  # settng cookie on the redirect response
+        if user.is_2fa_enabled:
+            await self.set_2fa_token(user.id, redirect)
+        else:
+            await self.set_access_token(user.id, request, redirect, session)
         return redirect
 
     async def setup_2fa(
@@ -485,7 +519,7 @@ class UserAPI:
         return Setup2FAResponse(uri=uri)
 
     async def activate_2fa(
-        self, payload: Activate2FARequest, user: GetCurrentUser, session: DBSession
+        self, payload: OTPVerifyRequest, user: GetCurrentUser, session: DBSession
     ):
         if user.is_2fa_enabled:
             raise HTTPException(
@@ -511,6 +545,78 @@ class UserAPI:
 
         user.is_2fa_enabled = True
         await session.commit()
+
+    async def verify_2fa(
+        self,
+        payload: OTPVerifyRequest,
+        request: Request,
+        session: DBSession,
+        response: Response,
+    ):
+        token = request.cookies.get("pre_auth_token")
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired, please login again.",
+            )
+
+        jwt_payload = JWTProvider.decode_token(token)
+
+        try:
+            user_id = int(jwt_payload["sub"])
+
+            if jwt_payload["purpose"] != TokenPurpose.TWO_FA_VERIFICATION:
+                raise TypeError
+
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid 2fa verification token.",
+            )
+
+        user = await session.scalar(
+            select(User).where(User.id == user_id, User.email == payload.email)
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="User not found!"
+            )
+
+        if not user.is_2fa_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Two-factor authentication is not enabled.",
+            )
+
+        if not user.totp_secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please Setup two-factor authentication!",
+            )
+
+        secret = self.twofa_provider.decrypt_2fa_secret(user.totp_secret)
+        is_valid = self.twofa_provider.verify_totp_code(
+            secret=secret, code=payload.code
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid code!"
+            )
+
+        # Set access token on success
+        await self.set_access_token(user.id, request, response, session)
+
+        response.delete_cookie(
+            key="pre_auth_token",
+            path="/api/v1/user/2fa/verify",
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
+
+        return StatusResponse(message="Two-factor authentication verified.")
 
     async def update_user_info(
         self, payload: UserPartialUpdate, user: GetCurrentUser, session: DBSession

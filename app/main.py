@@ -77,6 +77,11 @@ def signin():
     return FileResponse(BASE_DIR / "static" / "signin.html")
 
 
+@app.get("/2fa/verify", include_in_schema=False)
+def verify_two_factor():
+    return FileResponse(BASE_DIR / "static" / "twofa_verify.html")
+
+
 @app.get("/create-join-request", include_in_schema=False)
 def create_join_request():
     return FileResponse(BASE_DIR / "static" / "create_join_request.html")

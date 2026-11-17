@@ -67,7 +67,8 @@ class Setup2FAResponse(BaseModel):
     uri: str
 
 
-class Activate2FARequest(BaseModel):
+class OTPVerifyRequest(BaseModel):
+    email: str  # Email
     code: str
 
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from uuid import uuid4
 
 import bcrypt
@@ -10,6 +11,11 @@ from fastapi import HTTPException, status
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+class TokenPurpose(StrEnum):
+    ACCESS = "access"
+    TWO_FA_VERIFICATION = "2fa_verification"
 
 
 class AuthProvider:
@@ -34,15 +40,16 @@ class AuthProvider:
 
 class JWTProvider:
     @staticmethod
-    def create_access_token(user_id: int) -> tuple[str, str]:
+    def create_token(
+        user_id: int, purpose: TokenPurpose, exp_minutes: int
+    ) -> tuple[str, str]:
         session_id = str(uuid4())
-        expires_at = datetime.now(UTC) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        )
+        expires_at = datetime.now(UTC) + timedelta(minutes=exp_minutes)
 
         payload = {
             "sub": str(user_id),
             "jti": session_id,
+            "purpose": purpose,
             "exp": expires_at,
         }
 
@@ -53,7 +60,7 @@ class JWTProvider:
         ), session_id
 
     @staticmethod
-    def decode_access_token(token: str) -> dict:
+    def decode_token(token: str) -> dict:
         try:
             return jwt.decode(
                 jwt=token,
