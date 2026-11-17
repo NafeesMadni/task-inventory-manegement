@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard | Device Portal</title>
     <link rel="stylesheet" href="/static/css/app.css?v=20261116b">
+    <link rel="stylesheet" href="/static/css/history.css?v=20261116a">
 </head>
 
 <body>
@@ -32,15 +33,15 @@
 
             <div class="stats">
                 <div class="stat-card">
-                    <p>Total requests</p>
+                    <p>Matching requests</p>
                     <h2 id="total-count">0</h2>
                 </div>
                 <div class="stat-card">
-                    <p>Pending</p>
+                    <p>Pending in results</p>
                     <h2 id="pending-count">0</h2>
                 </div>
                 <div class="stat-card">
-                    <p>Processed</p>
+                    <p>Processed in results</p>
                     <h2 id="processed-count">0</h2>
                 </div>
             </div>
@@ -50,20 +51,19 @@
                     <div class="segmented" id="status-filter">
                         <button class="active" data-status="all">All</button>
                         <button data-status="pending">Pending</button>
-                        <button data-status="processed">Processed</button>
+                        <button data-status="approved">Approved</button>
+                        <button data-status="rejected">Rejected</button>
                     </div>
                     <span class="count" id="request-count">0 requests</span>
                 </div>
 
                 <div class="table-wrapper">
-                    <table>
+                    <table class="hist-table">
                         <thead>
                             <tr>
                                 <th>ID</th>
                                 <th>Requester</th>
-                                <th>Note</th>
                                 <th>Requested</th>
-                                <th>Reviewer</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -72,6 +72,7 @@
                     </table>
                 </div>
             </div>
+            <dialog class="drawer" id="join-request-drawer"></dialog>
         </section>
 
         <!-- ===== Login History (admin only) ===== -->
@@ -173,6 +174,8 @@
         let role = "pending";
         let allowedRoutes = [];
         let joinRequests = [];
+        let joinRequestLoadId = 0;
+        let activeJoinRequestId = null;
         let loginHistory = [];
         let statusFilter = "all";
         const loaded = {};
@@ -299,12 +302,40 @@
                 statusFilter = btn.dataset.status;
                 document.querySelectorAll("#status-filter button")
                     .forEach(b => b.classList.toggle("active", b === btn));
-                renderRequests();
+                loadJoinRequests();
             });
 
             $("requests-table").addEventListener("click", event => {
                 const btn = event.target.closest("button[data-action]");
-                if (btn) processRequest(Number(btn.dataset.id), btn.dataset.action === "approve");
+                if (btn) {
+                    processRequest(Number(btn.dataset.id), btn.dataset.action === "approve");
+                    return;
+                }
+
+                const row = event.target.closest("tr[data-id]");
+                if (row) openJoinRequest(Number(row.dataset.id));
+            });
+
+            $("requests-table").addEventListener("keydown", event => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                if (event.target.closest("button")) return;
+
+                const row = event.target.closest("tr[data-id]");
+                if (!row) return;
+
+                event.preventDefault();
+                openJoinRequest(Number(row.dataset.id));
+            });
+
+            const joinRequestDrawer = $("join-request-drawer");
+            joinRequestDrawer.addEventListener("click", event => {
+                if (event.target === joinRequestDrawer || event.target.closest("[data-close]")) {
+                    closeJoinRequestDrawer();
+                }
+            });
+            joinRequestDrawer.addEventListener("cancel", event => {
+                event.preventDefault();
+                closeJoinRequestDrawer();
             });
 
             /* Login history */
@@ -365,21 +396,31 @@
         /* ---------- Join requests ---------- */
 
         async function loadJoinRequests() {
-            tableMessage($("requests-table"), 7, "Loading requests...");
+            const loadId = ++joinRequestLoadId;
+            tableMessage($("requests-table"), 5, "Loading requests...");
 
             try {
-                const response = await api("/user/join-requests");
-                if (!response) return;
+                const params = new URLSearchParams();
+                if (statusFilter !== "all") params.set("status", statusFilter);
+                const queryString = params.toString();
+                const query = queryString ? `?${queryString}` : "";
+                const response = await api(`/user/join-requests${query}`);
+                if (!response || loadId !== joinRequestLoadId) return;
                 if (!response.ok) throw new Error("Unable to load join requests.");
 
-                joinRequests = (await response.json()).map(r => ({
+                const result = await response.json();
+                if (loadId !== joinRequestLoadId) return;
+                joinRequests = result.map(r => ({
                     ...r,
-                    _status: String(r.status ?? "").trim().toLowerCase()
+                    _status: String(r.status ?? "").trim().toLowerCase(),
                 }));
                 renderRequests();
+                if ($("join-request-drawer").open) renderJoinRequestDrawer();
 
             } catch (error) {
-                tableMessage($("requests-table"), 7, error.message, true);
+                if (loadId === joinRequestLoadId) {
+                    tableMessage($("requests-table"), 5, error.message, true);
+                }
             }
         }
 
@@ -399,31 +440,18 @@
             $("pending-count").textContent = pending.length;
             $("processed-count").textContent = joinRequests.length - pending.length;
 
-            const visible = joinRequests.filter(r => {
-                if (statusFilter === "pending") return r._status === "pending";
-                if (statusFilter === "processed") return r._status !== "pending";
-                return true;
-            });
+            const visible = joinRequests;
 
             $("request-count").textContent = `${visible.length} request${visible.length === 1 ? "" : "s"}`;
 
             if (!visible.length) {
-                tableMessage($("requests-table"), 7, "No join requests found.");
+                tableMessage($("requests-table"), 5, "No join requests found.");
                 return;
             }
 
             $("requests-table").innerHTML = visible.map(request => {
                 const isPending = request._status === "pending";
-
-                // Pending: who it is waiting on. Processed: who handled it, and when.
-                const reviewer = isPending
-                    ? `<span class="sub">Assigned to</span>` +
-                    (request.approval_username
-                        ? person(request.approval_username, request.approval_role)
-                        : `<span class="muted">Any admin</span>`)
-                    : `<span class="sub">Processed by</span>` +
-                    person(request.processed_by_username, request.processed_by_role) +
-                    `<span class="sub" style="margin:3px 0 0">${formatDate(request.processed_at)}</span>`;
+                const requester = request.requester_info;
 
                 const actions = isPending
                     ? `<div class="actions">
@@ -433,16 +461,102 @@
                     : `<span class="muted">-</span>`;
 
                 return `
-                <tr>
-                    <td class="muted">#${request.id}</td>
-                    <td>${person(request.requester_username, request.requester_role, "Requested role")}</td>
-                    <td class="note muted">${escapeHTML(request.request_note || "No note provided")}</td>
-                    <td class="muted">${formatDate(request.requested_at)}</td>
-                    <td>${reviewer}</td>
+                <tr class="hist-row" data-id="${escapeHTML(request.id)}" tabindex="0">
+                    <td class="muted">#${escapeHTML(request.id)}</td>
+                    <td>
+                        ${person(requester?.username, requester?.role)}
+                        ${requester?.email ? `<span class="sub">${escapeHTML(requester.email)}</span>` : ""}
+                    </td>
+                    <td class="muted">${escapeHTML(formatDate(request.requested_at))}</td>
                     <td><span class="status ${escapeHTML(request._status)}">${escapeHTML(request._status)}</span></td>
                     <td>${actions}</td>
                 </tr>`;
             }).join("");
+        }
+
+        function kv(rows) {
+            const shown = rows.filter(([, value]) => value != null && value !== "");
+            return `<dl class="kv">${shown.map(([label, value]) =>
+                `<dt>${escapeHTML(label)}</dt><dd>${value}</dd>`).join("")}</dl>`;
+        }
+
+        function userDetails(user) {
+            if (!user) return `<span class="muted">Not recorded</span>`;
+
+            return kv([
+                ["Name", person(user.username, user.role)],
+                ["Email", escapeHTML(user.email)],
+                ["User ID", escapeHTML(user.id)],
+            ]);
+        }
+
+        function renderJoinRequestDrawer() {
+            const request = joinRequests.find(r => r.id === activeJoinRequestId);
+            if (!request) {
+                closeJoinRequestDrawer();
+                return;
+            }
+
+            const drawer = $("join-request-drawer");
+            drawer.innerHTML = `
+                <div class="drawer-head">
+                    <div class="drawer-title-row">
+                        <div>
+                            <h2 class="drawer-title">Join request #${escapeHTML(request.id)}</h2>
+                            <p class="drawer-sub">Submitted ${escapeHTML(formatDate(request.requested_at))}</p>
+                        </div>
+                        <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+                    </div>
+                    <div class="drawer-pills">
+                        <span class="status ${escapeHTML(request._status)}">${escapeHTML(request._status)}</span>
+                    </div>
+                </div>
+                <div class="drawer-body">
+                    <section>
+                        <h3 class="drawer-h">Requester</h3>
+                        ${userDetails(request.requester_info)}
+                    </section>
+                    <section>
+                        <h3 class="drawer-h">Request details</h3>
+                        ${kv([
+                            ["Note", escapeHTML(request.note || "No note provided")],
+                            ["Status", escapeHTML(request._status)],
+                            ["Submitted", escapeHTML(formatDate(request.requested_at))],
+                            ["Processed", request.processed_at ? escapeHTML(formatDate(request.processed_at)) : "Not processed"],
+                        ])}
+                    </section>
+                    <section>
+                        <h3 class="drawer-h">Review</h3>
+                        ${kv([
+                            ["Assigned reviewer", request.approval_info
+                                ? person(request.approval_info.username, request.approval_info.role)
+                                : "Not assigned"],
+                            ["Processed by", request.processor_info
+                                ? person(request.processor_info.username, request.processor_info.role)
+                                : "Not processed"],
+                        ])}
+                    </section>
+                </div>`;
+        }
+
+        function openJoinRequest(requestId) {
+            activeJoinRequestId = requestId;
+            renderJoinRequestDrawer();
+
+            const drawer = $("join-request-drawer");
+            drawer.classList.remove("closing");
+            if (!drawer.open) drawer.showModal();
+        }
+
+        function closeJoinRequestDrawer() {
+            const drawer = $("join-request-drawer");
+            if (!drawer.open) return;
+
+            drawer.classList.add("closing");
+            setTimeout(() => {
+                drawer.classList.remove("closing");
+                if (drawer.open) drawer.close();
+            }, 200);
         }
 
         async function processRequest(requestId, grant) {

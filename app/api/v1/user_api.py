@@ -34,6 +34,7 @@ from app.api.v1.types import (
     UserRef,
     UserResponse,
 )
+from app.api.v1.utils import _user_ref
 from app.core.config import get_settings
 from app.database.models import (
     JoinRequest,
@@ -807,44 +808,47 @@ class UserAPI:
         )
 
     async def get_join_requests(
-        self, user: GetCurrentUser, session: DBSession
+        self,
+        user: GetCurrentUser,
+        session: DBSession,
+        status: Annotated[JoinRequestStatus | None, Query()] = None,
     ) -> list[JoinRequestsResponse]:
-
-        stmt = select(JoinRequest).options(
-            selectinload(JoinRequest.requester),
-            selectinload(JoinRequest.requested_from_user),
-            selectinload(JoinRequest.processor),
-        )
-
-        if user.role == UserRole.ADMIN:
-            # Admin can see all join requests
-            pass
-
-        elif user.role == UserRole.SUPERVISOR:
-            # Supervisor can see requests addressed to them
-            stmt = stmt.where(JoinRequest.requested_from == user.id)
-
-        else:
+        if user.role == UserRole.DEVELOPER:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=403,
                 detail="You're not authorized to view join requests",
             )
 
-        result = await session.scalars(stmt)
+        filter = []
+
+        if status:
+            filter.append(JoinRequest.status == status)
+
+        if user.role == UserRole.SUPERVISOR:
+            # Supervisor can see requests addressed to them
+            filter.append(JoinRequest.requested_from == user.id)
+
+        result = await session.scalars(
+            select(JoinRequest)
+            .options(
+                selectinload(JoinRequest.requester),
+                selectinload(JoinRequest.requested_from_user),
+                selectinload(JoinRequest.processor),
+            )
+            .where(*filter)
+        )
+
         join_requests = result.all()
 
         return [
             JoinRequestsResponse(
                 id=jr.id,
-                requester_role=jr.requested_role,
-                requester_username=jr.requester.username,
-                approval_role=jr.requested_from_user.role,  # type: ignore
-                approval_username=jr.requested_from_user.username,
-                request_note=jr.request_note or None,
+                requester_info=_user_ref(jr.requester),  # type: ignore
+                approval_info=_user_ref(jr.requested_from_user),  # type: ignore
+                processor_info=_user_ref(jr.processor),  # type: ignore
+                note=jr.request_note or None,
                 status=jr.status,
                 requested_at=jr.created_at,
-                processed_by_username=jr.processor.username if jr.processor else None,
-                processed_by_role=jr.processor.role if jr.processor else None,
                 processed_at=jr.processed_at or None,
             )
             for jr in join_requests

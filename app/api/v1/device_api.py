@@ -24,9 +24,9 @@ from app.api.v1.types import (
     ResetDeviceAccess,
     SearchOptionsResponse,
     StatusResponse,
-    UserRef,
     _RequestApprovals,
 )
+from app.api.v1.utils import _user_ref
 from app.database.models import (
     ApprovalDecision,
     AssignmentReturnType,
@@ -141,13 +141,6 @@ class DeviceAPI:
             methods=["POST"],
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
-        )
-
-    def _user_ref(self, u: User | None) -> UserRef | None:
-        return (
-            UserRef(id=u.id, username=u.username, role=u.role, email=u.email)
-            if u
-            else None
         )
 
     def _device_ref(self, d: Device | None) -> DeviceRef | None:
@@ -270,7 +263,7 @@ class DeviceAPI:
             resp_data.append(
                 AllDevicesRequestsResponse(
                     request_id=device_request.id,
-                    requester_info=self._user_ref(device_request.requester),  # type: ignore
+                    requester_info=_user_ref(device_request.requester),  # type: ignore
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,
@@ -335,11 +328,11 @@ class DeviceAPI:
                 Assignments(
                     id=a.id,
                     request_id=a.request_id,
-                    assigned_to=self._user_ref(a.assigned_to_user),  # type: ignore
-                    assigned_by=self._user_ref(a.assigned_by_user),
+                    assigned_to=_user_ref(a.assigned_to_user),  # type: ignore
+                    assigned_by=_user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
-                    returned_by=self._user_ref(a.returned_by_user),
+                    returned_by=_user_ref(a.returned_by_user),
                     return_type=a.return_type,
                     return_note=a.return_note,
                     returned_at=a.returned_at,
@@ -355,7 +348,7 @@ class DeviceAPI:
                 Repairs(
                     id=r.id,
                     request_id=r.request_id,
-                    requested_by=self._user_ref(r.request.requester),  # type: ignore
+                    requested_by=_user_ref(r.request.requester),  # type: ignore
                     issue=r.request.issue,
                     note=r.note,
                     status=r.status,
