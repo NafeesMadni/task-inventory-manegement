@@ -120,6 +120,9 @@
                         <label for="filter-role">Role</label>
                         <select id="filter-role">
                             <option value="">All roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="developer">Developer</option>
                         </select>
                     </div>
 
@@ -128,7 +131,7 @@
                         <select id="filter-session">
                             <option value="">All sessions</option>
                             <option value="active">Active</option>
-                            <option value="ended">Signed out</option>
+                            <option value="signed_out">Signed out</option>
                             <option value="expired">No sign-out</option>
                         </select>
                     </div>
@@ -177,12 +180,9 @@
         let joinRequestLoadId = 0;
         let activeJoinRequestId = null;
         let loginHistory = [];
+        let loginHistoryLoadId = 0;
         let statusFilter = "all";
         const loaded = {};
-
-        // A login with no sign-out time counts as "active" only while its session could still be valid.
-        // Keep this in sync with ACCESS_TOKEN_EXPIRE_MINUTES on the backend.
-        const SESSION_MAX_HOURS = 24;
 
         /* Each route: title, who can see it, how to load it. */
         const ROUTES = [
@@ -340,13 +340,13 @@
 
             /* Login history */
             $("filter-search").addEventListener("input", applyHistoryFilters);
-            $("filter-role").addEventListener("change", applyHistoryFilters);
-            $("filter-session").addEventListener("change", applyHistoryFilters);
+            $("filter-role").addEventListener("change", loadLoginHistory);
+            $("filter-session").addEventListener("change", loadLoginHistory);
 
             ["filter-from", "filter-to"].forEach(id =>
                 $(id).addEventListener("change", () => {
                     setActiveRange(null);
-                    applyHistoryFilters();
+                    loadLoginHistory();
                 }));
 
             $("range-filter").addEventListener("click", event => {
@@ -354,18 +354,22 @@
                 if (!btn) return;
 
                 const days = btn.dataset.days;
-                $("filter-to").value = "";
-
                 if (days === "") {
                     $("filter-from").value = "";
+                    $("filter-to").value = "";
                 } else {
                     const from = new Date();
-                    from.setDate(from.getDate() - Number(days));
+                    from.setHours(0, 0, 0, 0);
+                    from.setDate(from.getDate() - Math.max(Number(days) - 1, 0));
                     $("filter-from").value = localISO(from);
+
+                    const to = new Date();
+                    to.setHours(23, 59, 59, 999);
+                    $("filter-to").value = localISO(to);
                 }
 
                 setActiveRange(btn);
-                applyHistoryFilters();
+                loadLoginHistory();
             });
 
             // Clicking a username or IP in the timeline filters by it.
@@ -384,7 +388,7 @@
             $("clear-filters").addEventListener("click", () => {
                 ["filter-search", "filter-role", "filter-session", "filter-from", "filter-to"].forEach(id => $(id).value = "");
                 setActiveRange(document.querySelector('#range-filter [data-days=""]'));
-                applyHistoryFilters();
+                loadLoginHistory();
             });
         }
 
@@ -519,22 +523,22 @@
                     <section>
                         <h3 class="drawer-h">Request details</h3>
                         ${kv([
-                            ["Note", escapeHTML(request.note || "No note provided")],
-                            ["Status", escapeHTML(request._status)],
-                            ["Submitted", escapeHTML(formatDate(request.requested_at))],
-                            ["Processed", request.processed_at ? escapeHTML(formatDate(request.processed_at)) : "Not processed"],
-                        ])}
+                ["Note", escapeHTML(request.note || "No note provided")],
+                ["Status", escapeHTML(request._status)],
+                ["Submitted", escapeHTML(formatDate(request.requested_at))],
+                ["Processed", request.processed_at ? escapeHTML(formatDate(request.processed_at)) : "Not processed"],
+            ])}
                     </section>
                     <section>
                         <h3 class="drawer-h">Review</h3>
                         ${kv([
-                            ["Assigned reviewer", request.approval_info
-                                ? person(request.approval_info.username, request.approval_info.role)
-                                : "Not assigned"],
-                            ["Processed by", request.processor_info
-                                ? person(request.processor_info.username, request.processor_info.role)
-                                : "Not processed"],
-                        ])}
+                ["Assigned reviewer", request.approval_info
+                    ? person(request.approval_info.username, request.approval_info.role)
+                    : "Not assigned"],
+                ["Processed by", request.processor_info
+                    ? person(request.processor_info.username, request.processor_info.role)
+                    : "Not processed"],
+            ])}
                     </section>
                 </div>`;
         }
@@ -594,44 +598,56 @@
         /* ---------- Login history ---------- */
 
         async function loadLoginHistory() {
+            const loadId = ++loginHistoryLoadId;
             $("history-list").innerHTML = `<div class="empty">Loading login history...</div>`;
 
             try {
-                const response = await api("/user/login-history");
-                if (!response) return;
+                const params = new URLSearchParams();
+                const roleFilter = $("filter-role").value;
+                const sessionFilter = $("filter-session").value;
+                const from = $("filter-from").value;
+                const to = $("filter-to").value;
+
+                if (roleFilter) params.set("role", roleFilter);
+                if (sessionFilter) params.set("session_filter", sessionFilter);
+                if (from) params.set("from_date", new Date(`${from}T00:00:00`).toISOString());
+                if (to) params.set("to_date", new Date(`${to}T23:59:59.999`).toISOString());
+
+                const query = params.toString();
+                const response = await api(`/user/login-history${query ? `?${query}` : ""}`);
+                if (!response || loadId !== loginHistoryLoadId) return;
 
                 if (response.status === 403) {
                     $("history-list").innerHTML =
                         `<div class="empty error">You are not authorized to view login history.</div>`;
                     return;
                 }
-                if (!response.ok) throw new Error("Unable to load login history.");
-
-                loginHistory = (await response.json())
-                    .map(record => ({
-                        ...record,
-                        _date: new Date(record.logged_in_at),
-                        _out: record.logged_out_at ? new Date(record.logged_out_at) : null,
-                    }))
-                    .sort((a, b) => b._date - a._date);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || "Unable to load login history.");
+                }
+                const result = await response.json();
+                if (loadId !== loginHistoryLoadId) return;
+                loginHistory = result.map(record => ({
+                    ...record,
+                    username: record.user_info?.username ?? "",
+                    role: record.user_info?.role ?? "",
+                    _date: new Date(record.logged_in_at),
+                    _out: record.logged_out_at ? new Date(record.logged_out_at) : null,
+                }));
 
                 flagNewIps();
-                populateRoleFilter();
                 applyHistoryFilters();
 
             } catch (error) {
-                $("history-list").innerHTML = `<div class="empty error">${escapeHTML(error.message)}</div>`;
+                if (loadId === loginHistoryLoadId) {
+                    $("history-list").innerHTML = `<div class="empty error">${escapeHTML(error.message)}</div>`;
+                }
             }
         }
 
-        // "ended"   = signed out (logged_out_at is set)
-        // "active"  = no sign-out yet and the login is recent enough for the session to still be valid
-        // "expired" = no sign-out recorded, but the session is too old to still be open
         function sessionState(record) {
-            if (record._out && !Number.isNaN(record._out.getTime())) return "ended";
-
-            const ageHours = (Date.now() - record._date.getTime()) / 3600000;
-            return ageHours <= SESSION_MAX_HOURS ? "active" : "expired";
+            return record.session === "signed_out" ? "ended" : record.session;
         }
 
         function formatDuration(ms) {
@@ -682,37 +698,11 @@
             }
         }
 
-        function populateRoleFilter() {
-            const select = $("filter-role");
-            const selected = select.value;
-            const roles = [...new Set(loginHistory.map(r => String(r.role ?? "")).filter(Boolean))].sort();
-
-            select.innerHTML = `<option value="">All roles</option>` +
-                roles.map(r => `<option value="${escapeHTML(r)}">${escapeHTML(r)}</option>`).join("");
-
-            if (roles.includes(selected)) select.value = selected;
-        }
-
         function applyHistoryFilters() {
             const search = $("filter-search").value.trim().toLowerCase();
-            const roleFilter = $("filter-role").value;
-            const sessionFilter = $("filter-session").value;
-            const from = $("filter-from").value;
-            const to = $("filter-to").value;
-
-            const fromDate = from ? new Date(`${from}T00:00:00`) : null;
-            const toDate = to ? new Date(`${to}T23:59:59.999`) : null;
 
             const filtered = loginHistory.filter(record => {
                 if (search && !`${record.username ?? ""} ${record.ip ?? ""}`.toLowerCase().includes(search)) return false;
-                if (roleFilter && String(record.role) !== roleFilter) return false;
-                if (sessionFilter && sessionState(record) !== sessionFilter) return false;
-
-                if (fromDate || toDate) {
-                    if (Number.isNaN(record._date.getTime())) return false;
-                    if (fromDate && record._date < fromDate) return false;
-                    if (toDate && record._date > toDate) return false;
-                }
                 return true;
             });
 
@@ -730,7 +720,7 @@
 
             $("history-count").textContent = records.length === loginHistory.length
                 ? `${records.length} records`
-                : `${records.length} of ${loginHistory.length} records`;
+                : `${records.length} of ${loginHistory.length} loaded records`;
         }
 
         /* ---------- Login history tree: day > user > sessions ---------- */
@@ -804,7 +794,8 @@
 
             // While searching or filtering, open everything so the matches are visible.
             const forceOpen = Boolean(
-                $("filter-search").value.trim() || $("filter-role").value || $("filter-session").value);
+                $("filter-search").value.trim() || $("filter-role").value || $("filter-session").value ||
+                $("filter-from").value || $("filter-to").value);
             const isOpen = key => forceOpen || historyTree.openNodes.has(key);
 
             list.innerHTML = [...days.entries()].map(([dayKey, day]) => {

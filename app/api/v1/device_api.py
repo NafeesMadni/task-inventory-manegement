@@ -26,7 +26,7 @@ from app.api.v1.types import (
     StatusResponse,
     _RequestApprovals,
 )
-from app.api.v1.utils import _user_ref
+from app.api.v1.utils import device_ref, user_ref
 from app.database.models import (
     ApprovalDecision,
     AssignmentReturnType,
@@ -143,24 +143,6 @@ class DeviceAPI:
             status_code=status.HTTP_200_OK,
         )
 
-    def _device_ref(self, d: Device | None) -> DeviceRef | None:
-        return (
-            DeviceRef(
-                id=d.id,
-                name=d.name,
-                ram_gb=d.ram_gb,
-                hdd_gb=d.hdd_gb,
-                ssd_gb=d.ssd_gb,
-                processor=d.processor,
-                brand=d.brand,
-                status=d.status,
-                condition=d.condition,
-                created_at=d.created_at,
-            )
-            if d
-            else None
-        )
-
     async def get_search_options(self) -> SearchOptionsResponse:
         return SearchOptionsResponse(
             statuses=list(DeviceStatus),
@@ -263,11 +245,11 @@ class DeviceAPI:
             resp_data.append(
                 AllDevicesRequestsResponse(
                     request_id=device_request.id,
-                    requester_info=_user_ref(device_request.requester),  # type: ignore
+                    requester_info=user_ref(device_request.requester),  # type: ignore
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,
-                    device_info=self._device_ref(device_request.device),
+                    device_info=device_ref(device_request.device),
                     requested_specs=device_request.requested_specs,
                     issue=device_request.issue,
                     approvals=approvals,
@@ -328,11 +310,11 @@ class DeviceAPI:
                 Assignments(
                     id=a.id,
                     request_id=a.request_id,
-                    assigned_to=_user_ref(a.assigned_to_user),  # type: ignore
-                    assigned_by=_user_ref(a.assigned_by_user),
+                    assigned_to=user_ref(a.assigned_to_user),  # type: ignore
+                    assigned_by=user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
-                    returned_by=_user_ref(a.returned_by_user),
+                    returned_by=user_ref(a.returned_by_user),
                     return_type=a.return_type,
                     return_note=a.return_note,
                     returned_at=a.returned_at,
@@ -348,7 +330,7 @@ class DeviceAPI:
                 Repairs(
                     id=r.id,
                     request_id=r.request_id,
-                    requested_by=_user_ref(r.request.requester),  # type: ignore
+                    requested_by=user_ref(r.request.requester),  # type: ignore
                     issue=r.request.issue,
                     note=r.note,
                     status=r.status,
@@ -434,7 +416,7 @@ class DeviceAPI:
 
         available_devices = result.all()
 
-        devices = [self._device_ref(device) for device in available_devices]
+        devices = [device_ref(device) for device in available_devices]
 
         sort_options = {
             "name": lambda d: d.name.lower(),

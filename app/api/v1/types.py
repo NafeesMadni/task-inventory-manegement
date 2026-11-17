@@ -59,6 +59,13 @@ DeviceSearchSort = Literal[
 ]
 
 
+LoginSession = Literal[
+    "active",
+    "signed_out",
+    "expired",
+]
+
+
 # -----------------------------
 # USER ENDPOINT MODELS
 # -----------------------------
@@ -123,9 +130,9 @@ class ActiveApprovalsResponse(BaseModel):
 
 
 class LoginHistoryResponse(BaseModel):
-    username: str
+    user_info: UserRef
+    session: LoginSession
     ip: str | None = None
-    role: UserRole | None = None
     logged_in_at: datetime
     logged_out_at: datetime | None = None
 
@@ -135,7 +142,7 @@ class JoinRequestsResponse(BaseModel):
 
     requester_info: UserRef
     approval_info: UserRef
-    processor_info: UserRef
+    processor_info: UserRef | None
 
     note: str | None
     status: JoinRequestStatus

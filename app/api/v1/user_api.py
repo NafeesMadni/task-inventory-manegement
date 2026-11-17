@@ -1,5 +1,5 @@
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from authlib.integrations.base_client.errors import OAuthError
@@ -25,6 +25,7 @@ from app.api.v1.types import (
     JoinRequestsResponse,
     LoginHistoryResponse,
     LoginRequest,
+    LoginSession,
     OTPVerifyRequest,
     Setup2FAResponse,
     SignupRequest,
@@ -34,7 +35,7 @@ from app.api.v1.types import (
     UserRef,
     UserResponse,
 )
-from app.api.v1.utils import _user_ref
+from app.api.v1.utils import to_utc, user_ref
 from app.core.config import get_settings
 from app.database.models import (
     JoinRequest,
@@ -843,9 +844,9 @@ class UserAPI:
         return [
             JoinRequestsResponse(
                 id=jr.id,
-                requester_info=_user_ref(jr.requester),  # type: ignore
-                approval_info=_user_ref(jr.requested_from_user),  # type: ignore
-                processor_info=_user_ref(jr.processor),  # type: ignore
+                requester_info=user_ref(jr.requester),  # type: ignore
+                approval_info=user_ref(jr.requested_from_user),  # type: ignore
+                processor_info=user_ref(jr.processor),
                 note=jr.request_note or None,
                 status=jr.status,
                 requested_at=jr.created_at,
@@ -942,31 +943,88 @@ class UserAPI:
         return StatusResponse(message="Success!")
 
     async def get_users_login_history(
-        self, user: GetCurrentUser, session: DBSession
+        self,
+        user: GetCurrentUser,
+        session: DBSession,
+        role: Annotated[UserRole | None, Query()] = None,
+        session_filter: Annotated[LoginSession | None, Query()] = None,
+        from_date: Annotated[datetime | None, Query()] = None,
+        to_date: Annotated[datetime | None, Query()] = None,
     ) -> list[LoginHistoryResponse]:
-
-        history: list[LoginHistoryResponse] = []
 
         if user.role != UserRole.ADMIN:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Admins only"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Admins only!"
             )
+
+        from_date = to_utc(from_date)
+        to_date = to_utc(to_date)
+
+        if from_date and to_date and from_date > to_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="from_date cannot be greater than to_date",
+            )
+
+        filters = []
+
+        if role:
+            filters.append(User.role == role)
+
+        # Calculate the timestamp for 24 hours ago in UTC
+        expiration_cutoff = datetime.now(UTC) - timedelta(
+            minutes=self.settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+
+        if session_filter == "active":
+            filters.extend([
+                LoginHistory.signed_out_at.is_(None),
+                LoginHistory.signed_in_at > expiration_cutoff,
+            ])
+
+        elif session_filter == "signed_out":
+            filters.append(LoginHistory.signed_out_at.is_not(None))
+
+        elif session_filter == "expired":
+            filters.extend([
+                LoginHistory.signed_out_at.is_(None),
+                LoginHistory.signed_in_at <= expiration_cutoff,  # Older than 24 hours
+            ])
+
+        # UTC date filters (based on sign-in time)
+        if from_date:
+            filters.append(LoginHistory.signed_in_at >= from_date)
+
+        if to_date:
+            filters.append(LoginHistory.signed_in_at <= to_date)
+
+        history: list[LoginHistoryResponse] = []
 
         records = await session.scalars(
             select(LoginHistory)
+            .join(LoginHistory.user)
             .options(selectinload(LoginHistory.user))
+            .where(*filters)
             .order_by(LoginHistory.signed_in_at.desc())
         )
+
         login_history = records.all()
 
         for record in login_history:
+            _session: LoginSession | None = (
+                "signed_out" if record.signed_out_at else "active"
+            )
+
+            if record.signed_out_at is None and record.signed_in_at < expiration_cutoff:
+                _session = "expired"
+
             history.append(
                 LoginHistoryResponse(
-                    username=record.user.username,
+                    user_info=user_ref(record.user),  # type: ignore
                     ip=record.ip,
-                    role=record.user.role,
                     logged_in_at=record.signed_in_at,
                     logged_out_at=record.signed_out_at,
+                    session=_session,
                 )
             )
 
