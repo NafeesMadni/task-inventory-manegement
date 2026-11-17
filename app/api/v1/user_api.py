@@ -370,9 +370,9 @@ class UserAPI:
         await session.flush()
         await session.commit()
 
-        if user.is_2fa_enabled:
-            # set cookies after successful 2FA verification
-            return AuthResponse(message=message, redirect_url=redirect_url)
+        # if user.is_2fa_enabled:
+        #     # set cookies after successful 2FA verification
+        #     return AuthResponse(message=message, redirect_url=redirect_url)
 
         await self.set_access_token(user.id, request, response, session)
 
