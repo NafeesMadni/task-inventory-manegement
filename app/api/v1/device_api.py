@@ -10,18 +10,18 @@ from app.api.v1.types import (
     AddDeviceRequest,
     AllDevicesRequestsResponse,
     Assignments,
+    DeviceHistorySort,
     DeviceInfo,
     DevicePartialUpdate,
     DeviceRef,
+    DeviceSearchSort,
     DevicesHistory,
-    DeviceSort,
     HistorySummary,
     MakeDeviceRequest,
     MyDevicesResponse,
     ProcessDeviceRequest,
     Repairs,
     ResetDeviceAccess,
-    SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
     UserRef,
@@ -70,7 +70,7 @@ class DeviceAPI:
         self.router.add_api_route(
             "/search",
             endpoint=self.search_devices,
-            methods=["POST"],
+            methods=["GET"],
             response_model=list[DeviceRef],
             status_code=status.HTTP_200_OK,
         )
@@ -286,7 +286,7 @@ class DeviceAPI:
         self,
         user: GetCurrentUser,
         session: DBSession,
-        sort_by: Annotated[DeviceSort, Query()] = "name",
+        sort_by: Annotated[DeviceHistorySort, Query()] = "name",
         status: Annotated[DeviceStatus | None, Query()] = None,
     ) -> list[DevicesHistory]:
         if user.role != UserRole.ADMIN:
@@ -421,22 +421,37 @@ class DeviceAPI:
         return device
 
     async def search_devices(
-        self, payload: SearchDevicesRequest, _: GetCurrentUser, session: DBSession
+        self,
+        _: GetCurrentUser,
+        session: DBSession,
+        sort_by: Annotated[DeviceSearchSort, Query()] = "name",
+        status: Annotated[DeviceStatus | None, Query()] = None,
+        condition: Annotated[DeviceCondition | None, Query()] = None,
     ) -> list[DeviceRef]:
 
         filters = []
 
-        if payload.status is not None:
-            filters.append(Device.status == payload.status)
+        if status:
+            filters.append(Device.status == status)
 
-        if payload.condition is not None:
-            filters.append(Device.condition == payload.condition)
+        if condition:
+            filters.append(Device.condition == condition)
 
         result = await session.scalars(select(Device).where(*filters))
 
         available_devices = result.all()
 
-        return [self._device_ref(device) for device in available_devices]  # type: ignore
+        devices = [self._device_ref(device) for device in available_devices]
+
+        sort_options = {
+            "name": lambda d: d.name.lower(),
+            "brand": lambda d: d.brand.lower(),
+            "ram_h_to_l": lambda d: d.ram_gb,
+            "recently_added": lambda d: d.created_at,
+        }
+        is_reverse = sort_by in ("ram_h_to_l", "recently_added")
+
+        return sorted(devices, key=sort_options[sort_by], reverse=is_reverse)  # type: ignore
 
     async def get_my_devices(
         self, user: GetCurrentUser, session: DBSession

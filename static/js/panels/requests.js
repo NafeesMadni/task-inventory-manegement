@@ -217,25 +217,12 @@ const RequestsPanel = (() => {
             $("picker").innerHTML = `<div class="empty">Loading available devices...</div>`;
 
             try {
-                // Ask for the "available" status using whatever value your enum exposes.
-                let filters = {};
-                const optionsResponse = await api("/device/options");
-                if (optionsResponse?.ok) {
-                    const options = await optionsResponse.json();
-                    const available = (options.statuses || []).find(s => pretty(s).includes("avail"));
-                    if (available) filters = { status: available };
-                }
-
-                const response = await api("/device/search", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(filters),
-                });
+                const params = new URLSearchParams({ status: "available", sort_by: "name" });
+                const response = await api(`/device/search?${params}`);
                 if (!response) return;
                 if (!response.ok) throw new Error("Unable to load available devices.");
 
-                availableDevices = (await response.json())
-                    .filter(d => pretty(d.status).includes("avail"));
+                availableDevices = await response.json();
                 availableLoaded = true;
                 renderPicker();
 

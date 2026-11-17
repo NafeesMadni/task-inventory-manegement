@@ -44,11 +44,18 @@ class DeviceRef(BaseModel):
 # -----------------------------
 # Literals
 # -----------------------------
-DeviceSort = Literal[
+DeviceHistorySort = Literal[
     "name",
     "recently_updated",
     "most_assignments",
     "most_repairs",
+]
+
+DeviceSearchSort = Literal[
+    "name",
+    "brand",
+    "ram_h_to_l",
+    "recently_added",
 ]
 
 
@@ -329,11 +336,6 @@ class AssignedByDevicesResponse(BaseModel):
 class SearchOptionsResponse(BaseModel):
     statuses: list[DeviceStatus]
     conditions: list[DeviceCondition]
-
-
-class SearchDevicesRequest(BaseModel):
-    status: DeviceStatus | None = None
-    condition: DeviceCondition | None = None
 
 
 # -----------------------------
