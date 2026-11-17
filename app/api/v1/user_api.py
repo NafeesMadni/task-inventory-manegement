@@ -807,7 +807,7 @@ class UserAPI:
         )
 
     async def get_join_requests(
-        self, user: GetCurrentUser, session: DBSession, response: Response
+        self, user: GetCurrentUser, session: DBSession
     ) -> list[JoinRequestsResponse]:
 
         stmt = select(JoinRequest).options(
