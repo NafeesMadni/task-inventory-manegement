@@ -278,7 +278,7 @@ class DeviceAPI:
         status: Annotated[DeviceStatus | None, Query()] = None,
     ) -> list[DevicesHistory]:
         if user.role != UserRole.ADMIN:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
+            raise HTTPException(status_code=403, detail="Admins only")
 
         filters = []
 
