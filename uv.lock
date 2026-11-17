@@ -1754,6 +1754,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyotp"
+version = "2.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/51/02d8f9400d6e86fa9358bc091d31d20d325ba833d209099a22fc7784e653/pyotp-2.12.0.tar.gz", hash = "sha256:638ea37341567ec01277af3a16b682590d938f54f8ed3fb31963513233fd05f2", size = 26858, upload-time = "2026-11-15T22:03:06.513Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/8e/a293e976f73fed42e19cd7921175c6aac66cedbf8bed91766d3506fdea33/pyotp-2.12.0-py3-none-any.whl", hash = "sha256:d66830ab614e857c1e1b810b80384bcf7d437972f1e96625686e128e2e17ff83", size = 16734, upload-time = "2026-11-15T22:03:05.143Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2185,6 +2194,7 @@ dependencies = [
     { name = "authlib" },
     { name = "bcrypt" },
     { name = "celery" },
+    { name = "cryptography" },
     { name = "email-validator" },
     { name = "fastapi", extra = ["standard"] },
     { name = "fastapi-cloud-cli" },
@@ -2196,6 +2206,7 @@ dependencies = [
     { name = "openai-whisper" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
+    { name = "pyotp" },
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -2217,6 +2228,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.9.5" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "celery", specifier = ">=5.7.0" },
+    { name = "cryptography", specifier = ">=50.0.2" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.146.0" },
     { name = "fastapi-cloud-cli", specifier = ">=0.28.0" },
@@ -2228,6 +2240,7 @@ requires-dist = [
     { name = "openai-whisper", specifier = ">=20250625" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyjwt", specifier = ">=2.15.1" },
+    { name = "pyotp", specifier = ">=2.12.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.1" },
 ]

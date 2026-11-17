@@ -19,12 +19,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
+    Activate2FARequest,
     ActiveApprovalsResponse,
     AuthResponse,
     CreateJoinReqRequest,
     JoinRequestsResponse,
     LoginHistoryResponse,
     LoginRequest,
+    Setup2FAResponse,
     SignupRequest,
     StatusResponse,
     UpdatePassword,
@@ -42,7 +44,7 @@ from app.database.models import (
     UserRole,
 )
 from app.dependencies import DBSession, GetCurrentUser, VerifyTurnstile
-from app.services import AuthProvider, EmailManager, JWTProvider
+from app.services import AuthProvider, EmailManager, JWTProvider, TwoFAProvider
 
 
 class UserAPI:
@@ -66,6 +68,7 @@ class UserAPI:
         self.google_oauth = oauth.google
 
         self.email_manager = EmailManager()
+        self.twofa_provider = TwoFAProvider()
 
     def _register_routes(self) -> None:
         # Simple Signup/Login flow
@@ -96,6 +99,21 @@ class UserAPI:
             endpoint=self.auth_callback,
             name="auth_callback",
             methods=["GET"],
+            status_code=status.HTTP_200_OK,
+        )
+
+        # 2FA Setup and Activate
+        self.router.add_api_route(
+            "/2fa/setup",
+            endpoint=self.setup_2fa,
+            methods=["PATCH"],
+            response_model=Setup2FAResponse,
+            status_code=status.HTTP_200_OK,
+        )
+        self.router.add_api_route(
+            "/2fa/activate",
+            endpoint=self.activate_2fa,
+            methods=["PATCH"],
             status_code=status.HTTP_200_OK,
         )
 
@@ -352,6 +370,10 @@ class UserAPI:
         await session.flush()
         await session.commit()
 
+        if user.is_2fa_enabled:
+            # set cookies after successful 2FA verification
+            return AuthResponse(message=message, redirect_url=redirect_url)
+
         await self.set_access_token(user.id, request, response, session)
 
         return AuthResponse(message=message, redirect_url=redirect_url)
@@ -442,6 +464,54 @@ class UserAPI:
         )  # settng cookie on the redirect response
         return redirect
 
+    async def setup_2fa(
+        self, user: GetCurrentUser, session: DBSession
+    ) -> Setup2FAResponse:
+
+        if user.is_2fa_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Two-factor authentication is already enabled!",
+            )
+
+        secret = self.twofa_provider.generate_secret()
+        user.totp_secret = self.twofa_provider.encrypt_2fa_secret(secret)
+        uri = self.twofa_provider.get_provisioning_uri(
+            secret=secret, user_email=user.email, issuer_name=self.settings.APP_NAME
+        )
+
+        await session.commit()
+
+        return Setup2FAResponse(uri=uri)
+
+    async def activate_2fa(
+        self, payload: Activate2FARequest, user: GetCurrentUser, session: DBSession
+    ):
+        if user.is_2fa_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Two-factor authentication is already enabled!",
+            )
+
+        if not user.totp_secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please Setup two-factor authentication!",
+            )
+
+        secret = self.twofa_provider.decrypt_2fa_secret(user.totp_secret)
+        is_valid = self.twofa_provider.verify_totp_code(
+            secret=secret, code=payload.code
+        )
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid code!"
+            )
+
+        user.is_2fa_enabled = True
+        await session.commit()
+
     async def update_user_info(
         self, payload: UserPartialUpdate, user: GetCurrentUser, session: DBSession
     ):
@@ -496,6 +566,7 @@ class UserAPI:
             username=user.username,
             role=user.role,
             email=user.email,
+            is_2fa_enabled=user.is_2fa_enabled,
         )
 
     async def get_active_users(

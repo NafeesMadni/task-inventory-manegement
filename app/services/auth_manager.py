@@ -3,6 +3,8 @@ from uuid import uuid4
 
 import bcrypt
 import jwt
+import pyotp
+from cryptography.fernet import Fernet
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
@@ -70,3 +72,32 @@ class JWTProvider:
                 detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+
+class TwoFAProvider:
+    def __init__(self):
+        self.fernet = Fernet(settings.TWO_FACTOR_ENCRYPTION_KEY.encode())
+
+    def generate_secret(self) -> str:
+        """Generates a random 32-character base32 secret key."""
+        return pyotp.random_base32()
+
+    def get_provisioning_uri(
+        self, secret: str, user_email: str, issuer_name: str
+    ) -> str:
+        """Generates the otpauth:// URI used by QR code generators and authenticator apps."""
+        totp = pyotp.TOTP(secret)  # type: ignore
+        return totp.provisioning_uri(name=user_email, issuer_name=issuer_name)
+
+    def encrypt_2fa_secret(self, secret: str) -> str:
+        return self.fernet.encrypt(secret.encode()).decode()
+
+    def decrypt_2fa_secret(self, encrypted_secret: str) -> str:
+        return self.fernet.decrypt(encrypted_secret.encode()).decode()
+
+    def verify_totp_code(self, secret: str, code: str) -> bool:
+        """Verifies a 6-digit TOTP code against the user's secret."""
+        totp = pyotp.TOTP(secret)  # type: ignore
+
+        # Set valid_window=1 allows a 30-second buffer before/after for minor clock drift
+        return totp.verify(code)

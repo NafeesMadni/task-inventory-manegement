@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     GMAIL_PORT: int = Field(alias="GMAIL_PORT", default=587)
     GMAIL_HOST: str = Field(alias="GMAIL_HOST", default="smtp.gmail.com")
 
+    TWO_FACTOR_ENCRYPTION_KEY: str = Field(alias="TWO_FACTOR_ENCRYPTION_KEY")
+
     INITIAL_ADMIN_EMAIL: str = Field(alias="INITIAL_ADMIN_EMAIL")
     INITIAL_ADMIN_PASSWORD: str = Field(alias="INITIAL_ADMIN_PASSWORD")
 
