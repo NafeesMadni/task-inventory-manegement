@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile | Device Portal</title>
+    <link rel="stylesheet" href="/static/css/app.css?v=20261116c">
+    <script src="/static/js/shell.js?v=20261116c"></script>
+    <script src="/static/js/profile-ui.js?v=20261116a" defer></script>
+</head>
+
+<body>
+
+    <header class="site-header" id="site-header"></header>
+
+    <main class="container">
+        <div class="page-note" id="page-message">Loading...</div>
+
+        <section class="hidden" id="profile-page">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Account</p>
+                    <h1>Profile <span class="role-badge" id="profile-role"></span></h1>
+                    <p class="subtitle">Manage your account information and password.</p>
+                </div>
+            </div>
+
+            <div class="profile-grid">
+                <section class="card profile-card">
+                    <div class="card-heading">
+                        <h2>Personal information</h2>
+                        <p>These details appear throughout the portal.</p>
+                    </div>
+
+                    <form id="profile-form" novalidate>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="profile-first-name">First name</label>
+                                <input type="text" id="profile-first-name" name="first_name" maxlength="100" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="profile-last-name">Last name</label>
+                                <input type="text" id="profile-last-name" name="last_name" maxlength="100" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile-username">Username</label>
+                            <input type="text" id="profile-username" name="username" minlength="3" maxlength="100" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile-email">Email address</label>
+                            <input type="email" id="profile-email" readonly>
+                            <span class="field-help">Email address cannot be changed here.</span>
+                        </div>
+
+                        <div id="profile-message" class="message" role="alert"></div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg" id="profile-submit">Save profile</button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="card profile-card">
+                    <div class="card-heading">
+                        <h2>Change password</h2>
+                        <p>Choose a new password with at least eight characters.</p>
+                    </div>
+
+                    <form id="password-form" novalidate>
+                        <div class="form-group">
+                            <label for="current-password">Current password</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="current-password" name="old_password" autocomplete="current-password" required>
+                                <button type="button" class="toggle-password" data-password-toggle="current-password">Show</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="new-password">New password</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="new-password" name="new_password" minlength="8" autocomplete="new-password" required>
+                                <button type="button" class="toggle-password" data-password-toggle="new-password">Show</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="confirm-password">Confirm new password</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="confirm-password" autocomplete="new-password" required>
+                                <button type="button" class="toggle-password" data-password-toggle="confirm-password">Show</button>
+                            </div>
+                        </div>
+
+                        <div id="password-message" class="message" role="alert"></div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg" id="password-submit">Update password</button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        </section>
+    </main>
+
+</body>
+
+</html>

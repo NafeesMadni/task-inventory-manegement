@@ -230,41 +230,39 @@ a {
 .role-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  border-radius: 999px;
-  background: var(--primary-soft);
-  color: var(--primary-dark);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.2px;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1px;
   text-transform: capitalize;
   white-space: nowrap;
   vertical-align: middle;
+  line-height: 1.35;
 }
 
 .role-badge::before {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: currentColor;
 }
 
 .role-badge.admin {
-  background: var(--primary);
-  color: #fff;
+  color: var(--primary-dark);
 }
 .role-badge.supervisor {
-  background: var(--info-soft);
   color: var(--info);
 }
 .role-badge.developer {
-  background: #f1ecfa;
   color: #5a45a0;
 }
 .role-badge.pending {
-  background: var(--warn-soft);
   color: var(--warn);
 }
 
@@ -667,6 +665,37 @@ textarea:focus {
   box-shadow: var(--shadow);
 }
 
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.profile-card {
+  padding: 24px;
+}
+
+.card-heading {
+  margin-bottom: 22px;
+}
+
+.card-heading h2 {
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+
+.card-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -984,6 +1013,10 @@ th {
 
   .panel-heading {
     align-items: flex-start;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
   }
 
   .log-row {

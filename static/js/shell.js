@@ -101,6 +101,7 @@ const Portal = (() => {
                         <span class="avatar sm" id="user-avatar">·</span>
                         <span class="user-name" id="user-info">Loading...</span>
                     </div>
+                    <a href="/profile" class="btn" id="profile-btn">Profile</a>
                     <a href="/create-join-request" class="btn btn-primary hidden" id="request-access-btn">Request access</a>
                     <button class="btn" id="logout-btn">Logout</button>
                 </div>

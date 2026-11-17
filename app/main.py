@@ -62,6 +62,11 @@ def devices():
     return FileResponse(BASE_DIR / "static" / "devices.html")
 
 
+@app.get("/profile", include_in_schema=False)
+def profile():
+    return FileResponse(BASE_DIR / "static" / "profile.html")
+
+
 @app.get("/signup", include_in_schema=False)
 def sign():
     return FileResponse(BASE_DIR / "static" / "signup.html")
