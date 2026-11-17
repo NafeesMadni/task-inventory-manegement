@@ -14,6 +14,7 @@ from app.api.v1.types import (
     DevicePartialUpdate,
     DeviceRef,
     DevicesHistory,
+    DeviceSort,
     HistorySummary,
     MakeDeviceRequest,
     MyDevicesResponse,
@@ -84,7 +85,7 @@ class DeviceAPI:
         )
         self.router.add_api_route(
             "/history",
-            endpoint=self.get_all_devices_history,
+            endpoint=self.get_devices_history,
             methods=["GET"],
             response_model=list[DevicesHistory],
             status_code=status.HTTP_200_OK,
@@ -269,16 +270,24 @@ class DeviceAPI:
             )
         return resp_data
 
-    async def get_all_devices_history(
+    async def get_devices_history(
         self,
         user: GetCurrentUser,
         session: DBSession,
+        sort_by: Annotated[DeviceSort, Query()] = "name",
+        status: Annotated[DeviceStatus | None, Query()] = None,
     ) -> list[DevicesHistory]:
         if user.role != UserRole.ADMIN:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
 
+        filters = []
+
+        if status is not None:
+            filters.append(Device.status == status)
+
         devices = await session.scalars(
-            select(Device).options(
+            select(Device)
+            .options(
                 selectinload(Device.assignments).options(
                     selectinload(DeviceAssignment.assigned_to_user),
                     selectinload(DeviceAssignment.assigned_by_user),
@@ -288,6 +297,7 @@ class DeviceAPI:
                 .selectinload(DeviceRepair.request)
                 .selectinload(DevicesRequest.requester),
             )
+            .where(*filters)
         )
         devices_history: list[DevicesHistory] = []
 
@@ -361,7 +371,17 @@ class DeviceAPI:
                     assignments=assignments,
                 )
             )
-        return devices_history
+
+        sort_options = {
+            "name": lambda d: d.device_info.name.lower(),
+            "recently_updated": lambda d: d.device_info.updated_at,
+            "most_assignments": lambda d: d.summary.total_assignments,
+            "most_repairs": lambda d: d.summary.total_repairs,
+        }
+
+        return sorted(
+            devices_history, key=sort_options[sort_by], reverse=sort_by != "name"
+        )
 
     async def _add_device_record(
         self,

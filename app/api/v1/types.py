@@ -42,6 +42,17 @@ class DeviceRef(BaseModel):
 
 
 # -----------------------------
+# Literals
+# -----------------------------
+DeviceSort = Literal[
+    "name",
+    "recently_updated",
+    "most_assignments",
+    "most_repairs",
+]
+
+
+# -----------------------------
 # USER ENDPOINT MODELS
 # -----------------------------
 class UserPartialUpdate(BaseModel):
