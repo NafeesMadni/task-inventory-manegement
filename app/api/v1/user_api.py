@@ -15,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from redis_fastapi import RateLimitBackendDep
-from sqlalchemy import Select, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.types import (
@@ -568,7 +568,7 @@ class UserAPI:
             if jwt_payload["purpose"] != TokenPurpose.TWO_FA_VERIFICATION:
                 raise TypeError
 
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid 2fa verification token.",
