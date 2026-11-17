@@ -106,5 +106,5 @@ class TwoFAProvider:
         """Verifies a 6-digit TOTP code against the user's secret."""
         totp = pyotp.TOTP(secret)  # type: ignore
 
-        # Set valid_window=1 allows a 30-second buffer before/after for minor clock drift
+        # planing to set valid_window=1 allows a 30-second buffer before/after for minor clock drift
         return totp.verify(code)

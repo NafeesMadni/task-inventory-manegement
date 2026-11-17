@@ -1,15 +1,8 @@
-from __future__ import annotations
-
 import asyncio
-from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
 
 _session = None
 _init_lock = asyncio.Lock()
