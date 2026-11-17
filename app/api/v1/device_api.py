@@ -178,33 +178,30 @@ class DeviceAPI:
         self,
         user: GetCurrentUser,
         session: DBSession,
-        only_my_developers: Annotated[bool, Query()] = False,
+        type: Annotated[DeviceRequestType | None, Query()] = None,
+        status: Annotated[DeviceRequestStatus | None, Query()] = None,
+        my_developers_requests: Annotated[bool, Query()] = False,
     ) -> list[AllDevicesRequestsResponse]:
         resp_data: list[AllDevicesRequestsResponse] = []
 
-        if only_my_developers and user.role == UserRole.DEVELOPER:
+        if my_developers_requests and user.role != UserRole.SUPERVISOR:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="You don't have any developers!",
             )
 
         devices_requests: Sequence[DevicesRequest] = []
 
+        filters = []
+
+        if type:
+            filters.append(DevicesRequest.type == type)
+
+        if status:
+            filters.append(DevicesRequest.status == status)
+
         # ADMIN: can see everyone's requests and their level of approvals
         if user.role == UserRole.ADMIN:
-            result = await session.scalars(
-                select(DevicesRequest).options(
-                    selectinload(DevicesRequest.device),
-                    selectinload(DevicesRequest.approvals).selectinload(
-                        RequestApproval.approver
-                    ),
-                    selectinload(DevicesRequest.requester),
-                )
-            )
-            devices_requests = result.all()
-
-        # SUPERVISOR with only_my_developers(True): Supervisor can only see their developers requests
-        elif only_my_developers and user.role == UserRole.SUPERVISOR:
             result = await session.scalars(
                 select(DevicesRequest)
                 .options(
@@ -214,7 +211,22 @@ class DeviceAPI:
                     ),
                     selectinload(DevicesRequest.requester),
                 )
-                .where(RequestApproval.approver_id == user.id)
+                .where(*filters)
+            )
+            devices_requests = result.all()
+
+        # SUPERVISOR with my_developers(True): Supervisor can only see their developers requests
+        elif my_developers_requests and user.role == UserRole.SUPERVISOR:
+            result = await session.scalars(
+                select(DevicesRequest)
+                .options(
+                    selectinload(DevicesRequest.device),
+                    selectinload(DevicesRequest.approvals).selectinload(
+                        RequestApproval.approver
+                    ),
+                    selectinload(DevicesRequest.requester),
+                )
+                .where(RequestApproval.approver_id == user.id, *filters)
             )
             devices_requests = result.all()
 
@@ -229,14 +241,14 @@ class DeviceAPI:
                     ),
                     selectinload(DevicesRequest.requester),
                 )
-                .where(DevicesRequest.requested_by == user.id)
+                .where(DevicesRequest.requested_by == user.id, *filters)
             )
 
             devices_requests = result.all()
 
         else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="Not a valid request, please contact admin.",
             )
 

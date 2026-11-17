@@ -27,6 +27,7 @@ const RequestsPanel = (() => {
 
         let role = "pending";
         let requests = [];
+        let requestsLoadId = 0;
         let availableDevices = [];
         let availableLoaded = false;
         let selectedType = "existing";
@@ -46,12 +47,12 @@ const RequestsPanel = (() => {
         function bindEvents() {
             $("rq-refresh").addEventListener("click", loadRequests);
 
-            $("rq-type").addEventListener("change", renderTable);
-            $("rq-status").addEventListener("change", renderTable);
+            $("rq-type").addEventListener("change", loadRequests);
+            $("rq-status").addEventListener("change", loadRequests);
             $("rq-clear").addEventListener("click", () => {
                 $("rq-type").value = "";
                 $("rq-status").value = "";
-                renderTable();
+                loadRequests();
             });
 
             // Dialog
@@ -81,12 +82,16 @@ const RequestsPanel = (() => {
         /* ---------- My requests ---------- */
 
         async function loadRequests() {
+            const loadId = ++requestsLoadId;
             tableMessage("Loading requests...");
 
             try {
-                // only_my_developers=false returns the signed-in user's own requests.
-                const response = await RequestUI.allRequests(false);
-                if (!response) return;
+                // my_developers_requests=false returns the signed-in user's own requests.
+                const response = await RequestUI.allRequests({
+                    type: $("rq-type").value,
+                    status: $("rq-status").value,
+                });
+                if (!response || loadId !== requestsLoadId) return;
                 if (!response.ok) {
                     const data = await response.json().catch(() => ({}));
                     throw new Error(response.status === 403
@@ -94,32 +99,18 @@ const RequestsPanel = (() => {
                         : errorMessage(data, response.status));
                 }
 
-                requests = (await response.json())
+                const result = await response.json();
+                if (loadId !== requestsLoadId) return;
+                requests = result
                     .map(r => ({ ...r, _date: new Date(r.requested_at) }))
                     .sort((a, b) => b._date - a._date);
 
-                populateFilters();
                 renderStats();
                 renderTable();
 
             } catch (error) {
-                tableMessage(error.message, true);
+                if (loadId === requestsLoadId) tableMessage(error.message, true);
             }
-        }
-
-        function populateFilters() {
-            fill("rq-type", [...new Set(requests.map(r => String(r.type)))], "All types");
-            fill("rq-status", [...new Set(requests.map(r => String(r.status)))], "All statuses");
-        }
-
-        function fill(id, values, allLabel) {
-            const select = $(id);
-            const selected = select.value;
-
-            select.innerHTML = `<option value="">${allLabel}</option>` +
-                values.sort().map(v => `<option value="${escapeHTML(v)}">${escapeHTML(pretty(v))}</option>`).join("");
-
-            if (values.includes(selected)) select.value = selected;
         }
 
         function renderStats() {
@@ -132,18 +123,16 @@ const RequestsPanel = (() => {
         }
 
         function renderTable() {
-            const type = $("rq-type").value;
-            const status = $("rq-status").value;
-
-            const visible = requests.filter(r =>
-                (!type || String(r.type) === type) && (!status || String(r.status) === status));
+            const visible = requests;
 
             $("rq-count").textContent = visible.length === requests.length
                 ? `${visible.length} request${visible.length === 1 ? "" : "s"}`
                 : `${visible.length} of ${requests.length} requests`;
 
             if (!requests.length) {
-                tableMessage("You haven't made any requests yet. Use “New request” to get started.");
+                tableMessage($("rq-type").value || $("rq-status").value
+                    ? "No requests match your filters."
+                    : "You haven't made any requests yet. Use “New request” to get started.");
                 return;
             }
 

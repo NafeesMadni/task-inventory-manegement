@@ -13,12 +13,15 @@ const RequestUI = (() => {
     // Who gets what (see get_devices_requests on the backend):
     //   admin                      -> every request (the flag is ignored)
     //   supervisor, false          -> their own requests
-    //   supervisor, true           -> their developers' requests (the ones they approve)
-    //   developer, false           -> their own requests
     // Returns the raw response, or null after a redirect to sign in.
-    function allRequests(onlyMyDevelopers = false) {
-        return api(`${ALL_REQUESTS_PATH}?only_my_developers=${onlyMyDevelopers ? "true" : "false"}`,
-            { method: ALL_REQUESTS_METHOD });
+    function allRequests({ onlyMyDevelopers = false, type = "", status = "" } = {}) {
+        const params = new URLSearchParams({
+            my_developers_requests: String(onlyMyDevelopers),
+        });
+        if (type) params.set("type", type);
+        if (status) params.set("status", status);
+
+        return api(`${ALL_REQUESTS_PATH}?${params}`, { method: ALL_REQUESTS_METHOD });
     }
 
     function formatDate(value) {

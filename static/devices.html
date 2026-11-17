@@ -251,6 +251,9 @@
                         <label for="rq-type">Type</label>
                         <select id="rq-type">
                             <option value="">All types</option>
+                            <option value="existing">Existing device</option>
+                            <option value="new">New device</option>
+                            <option value="repair">Repair</option>
                         </select>
                     </div>
 
@@ -258,6 +261,10 @@
                         <label for="rq-status">Status</label>
                         <select id="rq-status">
                             <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="fulfilled">Fulfilled</option>
+                            <option value="rejected">Rejected</option>
                         </select>
                     </div>
 
@@ -321,6 +328,20 @@
                         <label for="ap-type">Type</label>
                         <select id="ap-type">
                             <option value="">All types</option>
+                            <option value="existing">Existing device</option>
+                            <option value="new">New device</option>
+                            <option value="repair">Repair</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="ap-status">Status</label>
+                        <select id="ap-status">
+                            <option value="">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="fulfilled">Fulfilled</option>
+                            <option value="rejected">Rejected</option>
                         </select>
                     </div>
 
@@ -645,15 +666,15 @@
 
     <script src="/static/js/shell.js?v=20261116c"></script>
     <script src="/static/js/tree.js?v=20261116a"></script>
-    <script src="/static/js/request-ui.js?v=20261116a"></script>
+    <script src="/static/js/request-ui.js?v=20261117b"></script>
     <script src="/static/js/device-ui.js?v=20261116a"></script>
     <script src="/static/js/voice-ui.js?v=20261116a"></script>
     <script src="/static/js/access-ui.js?v=20261116a"></script>
     <script src="/static/js/panels/devices.js?v=20261116c"></script>
     <script src="/static/js/panels/history.js?v=20261116a"></script>
     <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
-    <script src="/static/js/panels/requests.js?v=20261116a"></script>
-    <script src="/static/js/panels/approvals.js?v=20261116a"></script>
+    <script src="/static/js/panels/requests.js?v=20261117b"></script>
+    <script src="/static/js/panels/approvals.js?v=20261117c"></script>
     <script>
         const { $, escapeHTML, toast } = Portal;
 
