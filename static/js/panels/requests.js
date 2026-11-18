@@ -40,7 +40,7 @@ const RequestsPanel = (() => {
 
         function tableMessage(text, isError = false) {
             $("requests-table").innerHTML =
-                `<tr><td colspan="5" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
+                `<tr><td colspan="6" class="page-note ${isError ? "error" : ""}">${escapeHTML(text)}</td></tr>`;
         }
 
         /* ---------- Init ---------- */
@@ -57,11 +57,18 @@ const RequestsPanel = (() => {
             });
 
             $("requests-table").addEventListener("click", event => {
+                const revokeButton = event.target.closest("button[data-revoke-request]");
+                if (revokeButton) {
+                    revokeRequest(Number(revokeButton.dataset.revokeRequest));
+                    return;
+                }
+
                 const row = event.target.closest("tr[data-id]");
                 if (row) openRequestDrawer(Number(row.dataset.id));
             });
             $("requests-table").addEventListener("keydown", event => {
                 if (event.key !== "Enter" && event.key !== " ") return;
+                if (event.target.closest("button")) return;
                 const row = event.target.closest("tr[data-id]");
                 if (!row) return;
 
@@ -182,8 +189,30 @@ const RequestsPanel = (() => {
                     <td>${stage}</td>
                     <td class="muted" title="${escapeHTML(formatDateTime(request.requested_at))}">${formatDate(request.requested_at)}</td>
                     <td><span class="pill ${STATUS_TONE[statusKind(request.status)]}">${escapeHTML(pretty(request.status))}</span></td>
+                    <td>${statusKind(request.status) === "pending"
+                        ? `<button type="button" class="btn btn-sm btn-reject" data-revoke-request="${escapeHTML(request.request_id)}">Withdraw</button>`
+                        : `<span class="muted">-</span>`}</td>
                 </tr>`;
             }).join("");
+        }
+
+        async function revokeRequest(requestId) {
+            if (!confirm(`Withdraw pending request #${requestId}?`)) return;
+
+            try {
+                const params = new URLSearchParams({ request_id: String(requestId) });
+                const response = await api(`/device/revoke-request?${params}`);
+                if (!response) return;
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(errorMessage(result, response.status));
+
+                toast(result.message || "Request withdrawn.");
+                await loadRequests();
+
+            } catch (error) {
+                toast(error instanceof TypeError ? "Unable to connect to the server." : error.message, "error");
+            }
         }
 
         function approvalActor(approval) {
@@ -260,6 +289,7 @@ const RequestsPanel = (() => {
                             ["Reason / issue", request.issue ? escapeHTML(request.issue) : null],
                             ["Requested specifications", request.requested_specs ? escapeHTML(request.requested_specs) : null],
                             ["Submitted", escapeHTML(formatDateTime(request.requested_at))],
+                            ["Processed", request.processed_at ? escapeHTML(formatDateTime(request.processed_at)) : null],
                             ["Approval status", approvalSummary(request)],
                         ])}
                     </section>

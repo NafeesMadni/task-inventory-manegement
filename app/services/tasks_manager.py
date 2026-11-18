@@ -62,11 +62,15 @@ async def _process_request(request_id: int) -> str:
         if not device:
             return f"Device againts this request not found!, Request ID: {request_id}."
 
-        if request_record.status == DeviceRequestStatus.FULFILLED:
+        if request_record.status == DeviceRequestStatus.REJECTED:
+            return "Request has already been rejected."
+        elif request_record.status == DeviceRequestStatus.REVOKED:
+            return "Request has already been revoked by requester."
+        elif request_record.status == DeviceRequestStatus.FULFILLED:
             return "Request has already been approved and fulfilled."
-        elif request_record.status != DeviceRequestStatus.APPROVED:
+        elif request_record.status == DeviceRequestStatus.PENDING:
             return "Request has not been approved by admin yet."
-        else:
+        elif request_record.status == DeviceRequestStatus.APPROVED:
             # Only process the approved requests
             if request_record.type == DeviceRequestType.REPAIR:
                 device_repair_record = await session.scalar(
@@ -117,6 +121,7 @@ async def _process_request(request_id: int) -> str:
         notification_data = None
 
         request_record.status = DeviceRequestStatus.FULFILLED
+        request_record.processed_at = datetime.now(UTC)
 
         notification_data = {
             "to_email": request_record.requester.email,

@@ -216,6 +216,7 @@ class AllDevicesRequestsResponse(BaseModel):
     requested_at: datetime
     type: DeviceRequestType
     status: DeviceRequestStatus
+    processed_at: datetime | None = None
     device_info: DeviceRef | None = None
     requested_specs: str | None = None
     issue: str | None

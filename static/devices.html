@@ -265,6 +265,7 @@
                             <option value="approved">Approved</option>
                             <option value="fulfilled">Fulfilled</option>
                             <option value="rejected">Rejected</option>
+                            <option value="revoked">Revoked</option>
                         </select>
                     </div>
 
@@ -281,6 +282,7 @@
                                 <th>Approval progress</th>
                                 <th>Requested</th>
                                 <th>Status</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="requests-table"></tbody>
@@ -674,7 +676,7 @@
     <script src="/static/js/panels/devices.js?v=20261117a"></script>
     <script src="/static/js/panels/history.js?v=20261116a"></script>
     <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
-    <script src="/static/js/panels/requests.js?v=20261118b"></script>
+    <script src="/static/js/panels/requests.js?v=20261119b"></script>
     <script src="/static/js/panels/approvals.js?v=20261117c"></script>
     <script>
         const { $, escapeHTML, toast } = Portal;

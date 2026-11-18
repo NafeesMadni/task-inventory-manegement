@@ -135,6 +135,15 @@ class DeviceAPI:
             response_model=list[AllDevicesRequestsResponse],
             status_code=status.HTTP_200_OK,
         )
+
+        self.router.add_api_route(
+            "/revoke-request",
+            endpoint=self.revoke_device_request,
+            methods=["GET"],
+            response_model=StatusResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
         self.router.add_api_route(
             "/process-request",
             endpoint=self.process_device_request,
@@ -249,6 +258,7 @@ class DeviceAPI:
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,
+                    processed_at=device_request.processed_at,
                     device_info=device_ref(device_request.device),
                     requested_specs=device_request.requested_specs,
                     issue=device_request.issue,
@@ -743,6 +753,44 @@ class DeviceAPI:
             message=f"Request has been sent to {decision_msg} for approval."
         )
 
+    async def revoke_device_request(
+        self, request_id: int, user: GetCurrentUser, session: DBSession
+    ) -> StatusResponse:
+
+        request = await session.scalar(
+            select(DevicesRequest)
+            .options(selectinload(DevicesRequest.approvals))
+            .where(
+                DevicesRequest.id == request_id, DevicesRequest.requested_by == user.id
+            )
+            .with_for_update()
+        )
+
+        if request is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Request not found.",
+            )
+
+        if request.status != DeviceRequestStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot revoke a request with status '{request.status.value}'.",
+            )
+
+        request.pending_by = None
+        request.revoked_at = datetime.now(UTC)
+        request.status = DeviceRequestStatus.REVOKED
+
+        # Cancel outstanding approval records.
+        for approval in request.approvals:
+            if approval.decision == ApprovalDecision.PENDING:
+                approval.decision = ApprovalDecision.CANCELLED
+
+        await session.commit()
+
+        return StatusResponse(message="Device request revoked successfully.")
+
     async def process_device_request(
         self,
         payload: ProcessDeviceRequest,
@@ -758,36 +806,15 @@ class DeviceAPI:
                 message="You are not authorized to approve this request."
             )
 
-        request_approval_record = await session.scalar(
-            select(RequestApproval).where(
-                RequestApproval.request_id == payload.request_id,
-                RequestApproval.approver_id == user.id,
-            )
-        )
-
-        if not request_approval_record:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(message="Request not found.")
-
-        if request_approval_record.decision != ApprovalDecision.PENDING:
-            return StatusResponse(
-                message=f"Request has already been {request_approval_record.decision.value}."
-            )
-
-        decision = (
-            ApprovalDecision.APPROVED if payload.grant else ApprovalDecision.REJECTED
-        )
-
-        request_approval_record.decision = decision
-        request_approval_record.remarks = payload.remarks
-        request_approval_record.acted_at = datetime.now(UTC)
-
         # Fetch main request record by request id and current user id
         devices_request_record = await session.scalar(
             select(DevicesRequest)
             .options(
-                selectinload(DevicesRequest.requester),
                 selectinload(DevicesRequest.device),
+                selectinload(DevicesRequest.requester),
+                selectinload(DevicesRequest.approvals).selectinload(
+                    RequestApproval.approver
+                ),
             )
             .where(
                 DevicesRequest.id == payload.request_id,
@@ -799,11 +826,16 @@ class DeviceAPI:
             response.status_code = status.HTTP_409_CONFLICT
             return StatusResponse(
                 message=(
-                    "This request has either already been processed by you or is awaiting approval from a lower-level authority."
+                    "You're not authroized to process this request or the request might not be present."
                 )
             )
 
-        if devices_request_record.status == DeviceRequestStatus.REJECTED:
+        if devices_request_record.status == DeviceRequestStatus.REVOKED:
+            return StatusResponse(
+                message="Request has already been revoked by requester."
+            )
+
+        elif devices_request_record.status == DeviceRequestStatus.REJECTED:
             return StatusResponse(message="Request has already been rejected.")
 
         elif devices_request_record.status == DeviceRequestStatus.APPROVED:
@@ -813,6 +845,36 @@ class DeviceAPI:
             return StatusResponse(
                 message="Request has already been approved and fulfilled by amdin."
             )
+
+        decision = (
+            ApprovalDecision.APPROVED if payload.grant else ApprovalDecision.REJECTED
+        )
+
+        cur_approval: RequestApproval | None = None
+        next_approvals: list[RequestApproval] = []
+
+        for approval in sorted(
+            devices_request_record.approvals, key=lambda a: a.level, reverse=False
+        ):
+            # Only capture next approvals
+            if cur_approval:
+                next_approvals.append(approval)
+
+            if (
+                approval.approver_id == user.id
+                and approval.decision == ApprovalDecision.PENDING
+            ):
+                cur_approval = approval
+
+        if not cur_approval:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(
+                message="Request might not be found or has already been processed."
+            )
+
+        cur_approval.decision = decision
+        cur_approval.remarks = payload.remarks
+        cur_approval.acted_at = datetime.now(UTC)
 
         if (
             payload.grant
@@ -825,16 +887,23 @@ class DeviceAPI:
                 message="Please provide all required details (device_specs, scheduled_at) to approve request for a new device."
             )
 
-        next_request_approval: RequestApproval | None = None
         device: Device | None = None
+        next_approval = next_approvals[0] if next_approvals else None
 
         if decision == ApprovalDecision.REJECTED:
+            devices_request_record.pending_by = None
             devices_request_record.status = DeviceRequestStatus.REJECTED
+            devices_request_record.processed_at = datetime.now(UTC)
+
+            # Cancel the next approvals decision status
+            for approval in next_approvals:
+                approval.decision = ApprovalDecision.CANCELLED
 
         elif payload.grant:
             # It's a last level, approve the NewRepairDevicesRequest.status, update neccessary info and return
             if user.role == UserRole.ADMIN:
                 devices_request_record.status = DeviceRequestStatus.APPROVED
+                devices_request_record.processed_at = datetime.now(UTC)
 
                 if (
                     devices_request_record.device
@@ -905,21 +974,13 @@ class DeviceAPI:
                         await session.flush()
 
             else:  # Find next approval, update NewRepairDevicesRequest.pending_by with that approval.id, and send a email notification to both pending approval and requester
-                next_request_approval = await session.scalar(
-                    select(RequestApproval)
-                    .options(selectinload(RequestApproval.approver))
-                    .where(RequestApproval.level == request_approval_record.level + 1)
-                )
-
-                if next_request_approval:
-                    devices_request_record.pending_by = (
-                        next_request_approval.approver_id
-                    )
+                if next_approval:
+                    devices_request_record.pending_by = next_approval.approver_id
 
                 else:
                     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
                     return StatusResponse(
-                        message="Your request was processed successfully, but the next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
+                        message="Next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
                     )
 
         await session.commit()
@@ -932,23 +993,23 @@ class DeviceAPI:
             if devices_request_record.device
             else "Unknown",
             approved=payload.grant,
-            approver_username=request_approval_record.approver.username,
-            approver_role=request_approval_record.approver.role.value or "Unknown",  # type: ignore
+            approver_username=cur_approval.approver.username,
+            approver_role=cur_approval.approver.role.value or "Unknown",  # type: ignore
             remarks=payload.remarks,
-            next_approver_username=next_request_approval.approver.username
-            if next_request_approval
+            next_approver_username=cur_approval.approver.username
+            if cur_approval
             else None,
-            next_approver_role=next_request_approval.approver.role.value  # type: ignore
-            if next_request_approval
+            next_approver_role=cur_approval.approver.role.value  # type: ignore
+            if cur_approval
             else None,
             scheduled_at=payload.scheduled_at if payload.scheduled_at else None,
         )
 
-        if next_request_approval:
+        if next_approval:
             background_tasks.add_task(
                 self.email_manager.send_device_request_notification,
-                to_email=next_request_approval.approver.email,
-                approver_username=next_request_approval.approver.username,
+                to_email=next_approval.approver.email,
+                approver_username=next_approval.approver.username,
                 requester_username=user.username,
                 requester_name=f"{user.first_name} {user.last_name}",
                 request_id=devices_request_record.id,
