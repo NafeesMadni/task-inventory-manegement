@@ -277,9 +277,9 @@
                         <thead>
                             <tr>
                                 <th>Request</th>
-                                <th>Details</th>
+                                <th>Device / specifications</th>
+                                <th>Approval progress</th>
                                 <th>Requested</th>
-                                <th>Approvals</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -287,6 +287,7 @@
                     </table>
                 </div>
             </div>
+            <dialog class="drawer" id="rq-drawer"></dialog>
         </section>
         <section id="panel-approvals" class="hidden">
             <div class="panel-heading">
@@ -673,7 +674,7 @@
     <script src="/static/js/panels/devices.js?v=20261117a"></script>
     <script src="/static/js/panels/history.js?v=20261116a"></script>
     <script src="/static/js/panels/my-devices.js?v=20261116a"></script>
-    <script src="/static/js/panels/requests.js?v=20261117d"></script>
+    <script src="/static/js/panels/requests.js?v=20261118b"></script>
     <script src="/static/js/panels/approvals.js?v=20261117c"></script>
     <script>
         const { $, escapeHTML, toast } = Portal;

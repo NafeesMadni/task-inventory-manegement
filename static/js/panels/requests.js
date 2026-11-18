@@ -28,6 +28,7 @@ const RequestsPanel = (() => {
         let role = "pending";
         let requests = [];
         let requestsLoadId = 0;
+        let activeRequestId = null;
         let availableDevices = [];
         let availableLoaded = false;
         let selectedType = "existing";
@@ -53,6 +54,28 @@ const RequestsPanel = (() => {
                 $("rq-type").value = "";
                 $("rq-status").value = "";
                 loadRequests();
+            });
+
+            $("requests-table").addEventListener("click", event => {
+                const row = event.target.closest("tr[data-id]");
+                if (row) openRequestDrawer(Number(row.dataset.id));
+            });
+            $("requests-table").addEventListener("keydown", event => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                const row = event.target.closest("tr[data-id]");
+                if (!row) return;
+
+                event.preventDefault();
+                openRequestDrawer(Number(row.dataset.id));
+            });
+
+            const drawer = $("rq-drawer");
+            drawer.addEventListener("click", event => {
+                if (event.target === drawer || event.target.closest("[data-close]")) closeDrawer();
+            });
+            drawer.addEventListener("cancel", event => {
+                event.preventDefault();
+                closeDrawer();
             });
 
             // Dialog
@@ -107,6 +130,7 @@ const RequestsPanel = (() => {
 
                 renderStats();
                 renderTable();
+                if ($("rq-drawer").open) renderRequestDrawer();
 
             } catch (error) {
                 if (loadId === requestsLoadId) tableMessage(error.message, true);
@@ -142,24 +166,140 @@ const RequestsPanel = (() => {
             }
 
             $("requests-table").innerHTML = visible.map(request => {
-                const isNew = pretty(request.type).includes("new");
-
-                const details = isNew
-                    ? `<div class="note">${escapeHTML(request.requested_specs || "No specifications given")}</div>`
-                    : `<span class="spec">Device #${escapeHTML(request.device_info?.id ?? "-")}</span>`;
+                const stage = approvalSummary(request);
+                const device = request.device_info;
+                const details = device
+                    ? `${escapeHTML(device.name)} <span class="muted">#${escapeHTML(device.id)}</span>`
+                    : escapeHTML(request.requested_specs || "New device request");
 
                 return `
-                <tr>
+                <tr class="hist-row" data-id="${escapeHTML(request.request_id)}" tabindex="0">
                     <td>
                         <div class="device-name">#${escapeHTML(request.request_id)}</div>
                         <span class="pill ${typeTone(request.type)}" style="margin-top:6px">${escapeHTML(pretty(request.type))}</span>
                     </td>
                     <td>${details}</td>
+                    <td>${stage}</td>
                     <td class="muted" title="${escapeHTML(formatDateTime(request.requested_at))}">${formatDate(request.requested_at)}</td>
-                    <td>${renderApprovals(request.approvals)}</td>
                     <td><span class="pill ${STATUS_TONE[statusKind(request.status)]}">${escapeHTML(pretty(request.status))}</span></td>
                 </tr>`;
             }).join("");
+        }
+
+        function approvalActor(approval) {
+            const role = approval.role ? String(approval.role).toLowerCase() : "";
+            return `<strong>${escapeHTML(approval.approver_username)}</strong>` +
+                (role ? ` <span class="role-badge ${escapeHTML(role)}">${escapeHTML(role)}</span>` : "");
+        }
+
+        function approvalSummary(request) {
+            const approvals = [...(request.approvals || [])].sort((a, b) => a.level - b.level);
+            const rejected = approvals.find(a => statusKind(a.decision) === "rejected");
+            if (rejected) {
+                return `<span class="muted">Rejected by</span> ${approvalActor(rejected)}` +
+                    `<span class="sub">Level ${escapeHTML(rejected.level)}</span>`;
+            }
+
+            const pending = approvals.find(a => statusKind(a.decision) === "pending");
+            if (pending) {
+                return `<span class="muted">Pending with</span> ${approvalActor(pending)}` +
+                    `<span class="sub">Level ${escapeHTML(pending.level)}</span>`;
+            }
+
+            if (statusKind(request.status) === "pending") return `<span class="muted">Awaiting approval</span>`;
+
+            const lastApproved = [...approvals].reverse().find(a => statusKind(a.decision) === "approved");
+            return lastApproved
+                ? `<span class="muted">Last approved by</span> ${approvalActor(lastApproved)}` +
+                    `<span class="sub">Level ${escapeHTML(lastApproved.level)}</span>`
+                : `<span class="muted">No approval steps</span>`;
+        }
+
+        function kv(rows) {
+            const shown = rows.filter(([, value]) => value != null && value !== "");
+            return `<dl class="kv">${shown.map(([label, value]) =>
+                `<dt>${escapeHTML(label)}</dt><dd>${value}</dd>`).join("")}</dl>`;
+        }
+
+        function renderRequestDrawer() {
+            const request = requests.find(item => item.request_id === activeRequestId);
+            if (!request) {
+                closeDrawer();
+                return;
+            }
+
+            const device = request.device_info;
+            const requester = request.requester_info;
+            const drawer = $("rq-drawer");
+            drawer.innerHTML = `
+                <div class="drawer-head">
+                    <div class="drawer-title-row">
+                        <div>
+                            <h2 class="drawer-title">Request #${escapeHTML(request.request_id)}</h2>
+                            <p class="drawer-sub">${escapeHTML(pretty(request.type))} · Submitted ${escapeHTML(formatDateTime(request.requested_at))}</p>
+                        </div>
+                        <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
+                    </div>
+                    <div class="drawer-pills">
+                        <span class="pill ${STATUS_TONE[statusKind(request.status)]}">${escapeHTML(pretty(request.status))}</span>
+                        <span class="pill ${typeTone(request.type)}">${escapeHTML(pretty(request.type))}</span>
+                    </div>
+                </div>
+                <div class="drawer-body">
+                    <section>
+                        <h3 class="drawer-h">Requester</h3>
+                        ${kv([
+                            ["Username", requester ? `<strong>${escapeHTML(requester.username)}</strong>` : "Unknown user"],
+                            ["Email", requester ? escapeHTML(requester.email) : null],
+                            ["Role", requester?.role ? escapeHTML(pretty(requester.role)) : null],
+                        ])}
+                    </section>
+                    <section>
+                        <h3 class="drawer-h">Request details</h3>
+                        ${kv([
+                            ["Reason / issue", request.issue ? escapeHTML(request.issue) : null],
+                            ["Requested specifications", request.requested_specs ? escapeHTML(request.requested_specs) : null],
+                            ["Submitted", escapeHTML(formatDateTime(request.requested_at))],
+                            ["Approval status", approvalSummary(request)],
+                        ])}
+                    </section>
+                    <section>
+                        <h3 class="drawer-h">Device</h3>
+                        ${device ? kv([
+                            ["Name", `${escapeHTML(device.name)} (#${escapeHTML(device.id)})`],
+                            ["Brand", escapeHTML(device.brand)],
+                            ["Processor", escapeHTML(device.processor)],
+                            ["RAM", `${escapeHTML(device.ram_gb)} GB`],
+                            ["SSD", `${escapeHTML(device.ssd_gb)} GB`],
+                            ["HDD", `${escapeHTML(device.hdd_gb)} GB`],
+                            ["Status", escapeHTML(pretty(device.status))],
+                            ["Condition", escapeHTML(pretty(device.condition))],
+                        ]) : `<div class="empty">No device is associated with this request.</div>`}
+                    </section>
+                    <section>
+                        <h3 class="drawer-h">Approval history</h3>
+                        ${renderApprovals(request.approvals)}
+                    </section>
+                </div>`;
+        }
+
+        function openRequestDrawer(requestId) {
+            activeRequestId = requestId;
+            renderRequestDrawer();
+            const drawer = $("rq-drawer");
+            drawer.classList.remove("closing");
+            if (!drawer.open) drawer.showModal();
+        }
+
+        function closeDrawer() {
+            const drawer = $("rq-drawer");
+            if (!drawer.open) return;
+
+            drawer.classList.add("closing");
+            setTimeout(() => {
+                drawer.classList.remove("closing");
+                if (drawer.open) drawer.close();
+            }, 200);
         }
 
         /* ---------- New request dialog ---------- */
