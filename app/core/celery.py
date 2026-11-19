@@ -10,5 +10,6 @@ celery_app: Celery = Celery(
 )
 
 
-# PYTHONPATH=$(pwd) celery -A app.core.celery worker --loglevel=INFO  # This explicitly tells Python to include the current directory ($(pwd)) in its module search path.
-# --concurrency = 8 <= cpu cores (better) # The concurrency options allows you to specify the number of worker processes or threads that should run conccurently to process the tasks. https://youtu.be/kRRkJx1-mpA?si=JJ8hqXyH-CP46FGr
+# `PYTHONPATH=$(pwd) celery -A app.core.celery worker --loglevel=INFO` # This explicitly tells Python to include the current directory ($(pwd)) in its module search path.
+# `--concurrency = 8` # By default, the concurrency of a Celery worker is the number of available CPU cores on the machine.
+# Concurrency options allows to specify the number of worker processes or threads that should run conccurently to process the tasks. https://youtu.be/kRRkJx1-mpA?si=JJ8hqXyH-CP46FGr

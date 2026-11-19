@@ -11,7 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.celery import celery_app
 from app.core.config import get_settings
-from app.database.db import get_sessionmaker
 from app.database.models import (
     Device,
     DeviceAssignment,
@@ -23,7 +22,12 @@ from app.database.models import (
     DeviceStatus,
     RepairStatus,
 )
+from app.dependencies import get_db_session
 from app.services import EmailManager
+
+# Reuse a Single Event Loop Per Worker
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 
 @celery_app.task(name="send_device_scheduled_reminder_alert", bind=True, max_retries=3)
@@ -38,13 +42,12 @@ def send_device_scheduled_reminder_alert(self, **kwargs):
 def process_scheduled_device_request(self, request_id: int) -> str:
     print(f"Running task ID: {self.request.id}")
 
-    return asyncio.run(_process_request(request_id))
+    return loop.run_until_complete(_process_request(request_id))
 
 
 async def _process_request(request_id: int) -> str:
-    LocalSession = await get_sessionmaker()
 
-    async with LocalSession() as session:
+    async for session in get_db_session():
         request_record = await session.scalar(
             select(DevicesRequest)
             .options(
@@ -55,7 +58,7 @@ async def _process_request(request_id: int) -> str:
         )
 
         if not request_record:
-            return "Request not found, Request ID: {request_id}."
+            return f"Request not found, Request ID: {request_id}."
 
         device = request_record.device
 
