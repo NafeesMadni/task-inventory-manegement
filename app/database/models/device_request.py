@@ -61,6 +61,10 @@ class DevicesRequest(Base):
         nullable=False,
     )
 
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Relationships
 
     requester: Mapped[User] = relationship(

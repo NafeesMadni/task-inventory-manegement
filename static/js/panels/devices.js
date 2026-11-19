@@ -10,6 +10,7 @@ const DevicesPanel = (() => {
         let role = "pending";
         let allDevices = [];   // whole fleet, used for the stat cards
         let results = [];      // result of the latest server-side search
+        let searchRequestId = 0;
         let options = { statuses: [], conditions: [] };
         let editingDevice = null;
 
@@ -55,16 +56,17 @@ const DevicesPanel = (() => {
                 if (device) openEditDialog(device);
             });
 
-            // Status / condition are searched on the server; text search and sorting happen locally.
+            // Status, condition, and sorting are searched on the server; text search stays local.
             $("dv-status").addEventListener("change", runSearch);
             $("filter-condition").addEventListener("change", runSearch);
             $("filter-search").addEventListener("input", renderTable);
-            $("sort-by").addEventListener("change", renderTable);
+            $("sort-by").addEventListener("change", runSearch);
 
             $("dv-clear").addEventListener("click", () => {
                 $("filter-search").value = "";
                 $("dv-status").value = "";
                 $("filter-condition").value = "";
+                $("sort-by").value = "name";
                 runSearch();
             });
         }
@@ -72,11 +74,12 @@ const DevicesPanel = (() => {
         /* ---------- Data ---------- */
 
         async function fetchDevices(filters) {
-            const response = await api("/device/search", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(filters),
+            const params = new URLSearchParams({ sort_by: $("sort-by").value });
+            Object.entries(filters).forEach(([key, value]) => {
+                if (value) params.set(key, value);
             });
+
+            const response = await api(`/device/search?${params}`);
             if (!response) return null;
             if (response.status === 403) throw new Error("You are not authorized to view devices.");
             if (!response.ok) throw new Error("Unable to load devices.");
@@ -119,18 +122,21 @@ const DevicesPanel = (() => {
         }
 
         async function runSearch() {
+            const requestId = ++searchRequestId;
+            tableMessage("Loading devices...");
+
             const filters = {};
             if ($("dv-status").value) filters.status = $("dv-status").value;
             if ($("filter-condition").value) filters.condition = $("filter-condition").value;
 
             try {
-                // No server-side filters: reuse the full list instead of asking again.
-                results = Object.keys(filters).length ? await fetchDevices(filters) : allDevices;
-                if (results === null) return;
+                const searchedResults = await fetchDevices(filters);
+                if (searchedResults === null || requestId !== searchRequestId) return;
+                results = searchedResults;
                 renderTable();
 
             } catch (error) {
-                tableMessage(error.message, true);
+                if (requestId === searchRequestId) tableMessage(error.message, true);
             }
         }
 
@@ -149,35 +155,19 @@ const DevicesPanel = (() => {
             $("stats").innerHTML = cards.join("");
         }
 
-        function sortDevices(list) {
-            const by = $("sort-by").value;
-            const text = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), undefined, { sensitivity: "base" });
-
-            return [...list].sort((a, b) => {
-                if (by === "brand") return text(a.brand, b.brand) || text(a.name, b.name);
-                if (by === "ram") return (b.ram_gb - a.ram_gb) || text(a.name, b.name);
-                if (by === "added") {
-                    const ta = addedAt(a) ? new Date(addedAt(a)).getTime() : -Infinity;
-                    const tb = addedAt(b) ? new Date(addedAt(b)).getTime() : -Infinity;
-                    return tb - ta;
-                }
-                return text(a.name, b.name);
-            });
-        }
-
         function renderTable() {
             const search = $("filter-search").value.trim().toLowerCase();
 
-            const visible = sortDevices(results.filter(d =>
+            const visible = results.filter(d =>
                 !search || [d.id, d.name, d.brand, d.processor, pretty(d.status), pretty(d.condition)]
-                    .join(" ").toLowerCase().includes(search)));
+                    .join(" ").toLowerCase().includes(search));
 
             $("dv-count").textContent = visible.length === allDevices.length
                 ? `${visible.length} devices`
                 : `${visible.length} of ${allDevices.length} devices`;
 
             if (!visible.length) {
-                tableMessage("No devices match your search.");
+                tableMessage("No devices match your filters.");
                 return;
             }
 

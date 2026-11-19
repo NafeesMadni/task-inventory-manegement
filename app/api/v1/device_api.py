@@ -10,9 +10,11 @@ from app.api.v1.types import (
     AddDeviceRequest,
     AllDevicesRequestsResponse,
     Assignments,
+    DeviceHistorySort,
     DeviceInfo,
     DevicePartialUpdate,
     DeviceRef,
+    DeviceSearchSort,
     DevicesHistory,
     HistorySummary,
     MakeDeviceRequest,
@@ -20,12 +22,11 @@ from app.api.v1.types import (
     ProcessDeviceRequest,
     Repairs,
     ResetDeviceAccess,
-    SearchDevicesRequest,
     SearchOptionsResponse,
     StatusResponse,
-    UserRef,
     _RequestApprovals,
 )
+from app.api.v1.utils import device_ref, user_ref
 from app.database.models import (
     ApprovalDecision,
     AssignmentReturnType,
@@ -69,7 +70,7 @@ class DeviceAPI:
         self.router.add_api_route(
             "/search",
             endpoint=self.search_devices,
-            methods=["POST"],
+            methods=["GET"],
             response_model=list[DeviceRef],
             status_code=status.HTTP_200_OK,
         )
@@ -84,7 +85,7 @@ class DeviceAPI:
         )
         self.router.add_api_route(
             "/history",
-            endpoint=self.get_all_devices_history,
+            endpoint=self.get_devices_history,
             methods=["GET"],
             response_model=list[DevicesHistory],
             status_code=status.HTTP_200_OK,
@@ -134,37 +135,21 @@ class DeviceAPI:
             response_model=list[AllDevicesRequestsResponse],
             status_code=status.HTTP_200_OK,
         )
+
+        self.router.add_api_route(
+            "/revoke-request",
+            endpoint=self.revoke_device_request,
+            methods=["GET"],
+            response_model=StatusResponse,
+            status_code=status.HTTP_200_OK,
+        )
+
         self.router.add_api_route(
             "/process-request",
             endpoint=self.process_device_request,
             methods=["POST"],
             response_model=StatusResponse,
             status_code=status.HTTP_200_OK,
-        )
-
-    def _user_ref(self, u: User | None) -> UserRef | None:
-        return (
-            UserRef(id=u.id, username=u.username, role=u.role, email=u.email)
-            if u
-            else None
-        )
-
-    def _device_ref(self, d: Device | None) -> DeviceRef | None:
-        return (
-            DeviceRef(
-                id=d.id,
-                name=d.name,
-                ram_gb=d.ram_gb,
-                hdd_gb=d.hdd_gb,
-                ssd_gb=d.ssd_gb,
-                processor=d.processor,
-                brand=d.brand,
-                status=d.status,
-                condition=d.condition,
-                created_at=d.created_at,
-            )
-            if d
-            else None
         )
 
     async def get_search_options(self) -> SearchOptionsResponse:
@@ -177,33 +162,30 @@ class DeviceAPI:
         self,
         user: GetCurrentUser,
         session: DBSession,
-        only_my_developers: Annotated[bool, Query()] = False,
+        type: Annotated[DeviceRequestType | None, Query()] = None,
+        status: Annotated[DeviceRequestStatus | None, Query()] = None,
+        my_developers_requests: Annotated[bool, Query()] = False,
     ) -> list[AllDevicesRequestsResponse]:
         resp_data: list[AllDevicesRequestsResponse] = []
 
-        if only_my_developers and user.role == UserRole.DEVELOPER:
+        if my_developers_requests and user.role != UserRole.SUPERVISOR:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="You don't have any developers!",
             )
 
         devices_requests: Sequence[DevicesRequest] = []
 
+        filters = []
+
+        if type:
+            filters.append(DevicesRequest.type == type)
+
+        if status:
+            filters.append(DevicesRequest.status == status)
+
         # ADMIN: can see everyone's requests and their level of approvals
         if user.role == UserRole.ADMIN:
-            result = await session.scalars(
-                select(DevicesRequest).options(
-                    selectinload(DevicesRequest.device),
-                    selectinload(DevicesRequest.approvals).selectinload(
-                        RequestApproval.approver
-                    ),
-                    selectinload(DevicesRequest.requester),
-                )
-            )
-            devices_requests = result.all()
-
-        # SUPERVISOR with only_my_developers(True): Supervisor can only see their developers requests
-        elif only_my_developers and user.role == UserRole.SUPERVISOR:
             result = await session.scalars(
                 select(DevicesRequest)
                 .options(
@@ -213,7 +195,22 @@ class DeviceAPI:
                     ),
                     selectinload(DevicesRequest.requester),
                 )
-                .where(RequestApproval.approver_id == user.id)
+                .where(*filters)
+            )
+            devices_requests = result.all()
+
+        # SUPERVISOR with my_developers(True): Supervisor can only see their developers requests
+        elif my_developers_requests and user.role == UserRole.SUPERVISOR:
+            result = await session.scalars(
+                select(DevicesRequest)
+                .options(
+                    selectinload(DevicesRequest.device),
+                    selectinload(DevicesRequest.approvals).selectinload(
+                        RequestApproval.approver
+                    ),
+                    selectinload(DevicesRequest.requester),
+                )
+                .where(RequestApproval.approver_id == user.id, *filters)
             )
             devices_requests = result.all()
 
@@ -228,14 +225,14 @@ class DeviceAPI:
                     ),
                     selectinload(DevicesRequest.requester),
                 )
-                .where(DevicesRequest.requested_by == user.id)
+                .where(DevicesRequest.requested_by == user.id, *filters)
             )
 
             devices_requests = result.all()
 
         else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="Not a valid request, please contact admin.",
             )
 
@@ -257,11 +254,12 @@ class DeviceAPI:
             resp_data.append(
                 AllDevicesRequestsResponse(
                     request_id=device_request.id,
-                    requester_info=self._user_ref(device_request.requester),  # type: ignore
+                    requester_info=user_ref(device_request.requester),  # type: ignore
                     requested_at=device_request.requested_at,
                     type=device_request.type,
                     status=device_request.status,
-                    device_info=self._device_ref(device_request.device),
+                    processed_at=device_request.processed_at,
+                    device_info=device_ref(device_request.device),
                     requested_specs=device_request.requested_specs,
                     issue=device_request.issue,
                     approvals=approvals,
@@ -269,16 +267,24 @@ class DeviceAPI:
             )
         return resp_data
 
-    async def get_all_devices_history(
+    async def get_devices_history(
         self,
         user: GetCurrentUser,
         session: DBSession,
+        sort_by: Annotated[DeviceHistorySort, Query()] = "name",
+        status: Annotated[DeviceStatus | None, Query()] = None,
     ) -> list[DevicesHistory]:
         if user.role != UserRole.ADMIN:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
+            raise HTTPException(status_code=403, detail="Admins only")
+
+        filters = []
+
+        if status is not None:
+            filters.append(Device.status == status)
 
         devices = await session.scalars(
-            select(Device).options(
+            select(Device)
+            .options(
                 selectinload(Device.assignments).options(
                     selectinload(DeviceAssignment.assigned_to_user),
                     selectinload(DeviceAssignment.assigned_by_user),
@@ -288,6 +294,7 @@ class DeviceAPI:
                 .selectinload(DeviceRepair.request)
                 .selectinload(DevicesRequest.requester),
             )
+            .where(*filters)
         )
         devices_history: list[DevicesHistory] = []
 
@@ -313,11 +320,11 @@ class DeviceAPI:
                 Assignments(
                     id=a.id,
                     request_id=a.request_id,
-                    assigned_to=self._user_ref(a.assigned_to_user),  # type: ignore
-                    assigned_by=self._user_ref(a.assigned_by_user),
+                    assigned_to=user_ref(a.assigned_to_user),  # type: ignore
+                    assigned_by=user_ref(a.assigned_by_user),
                     scheduled_at=a.scheduled_at,
                     assigned_at=a.assigned_at,
-                    returned_by=self._user_ref(a.returned_by_user),
+                    returned_by=user_ref(a.returned_by_user),
                     return_type=a.return_type,
                     return_note=a.return_note,
                     returned_at=a.returned_at,
@@ -333,7 +340,7 @@ class DeviceAPI:
                 Repairs(
                     id=r.id,
                     request_id=r.request_id,
-                    requested_by=self._user_ref(r.request.requester),  # type: ignore
+                    requested_by=user_ref(r.request.requester),  # type: ignore
                     issue=r.request.issue,
                     note=r.note,
                     status=r.status,
@@ -361,7 +368,17 @@ class DeviceAPI:
                     assignments=assignments,
                 )
             )
-        return devices_history
+
+        sort_options = {
+            "name": lambda d: d.device_info.name.lower(),
+            "recently_updated": lambda d: d.device_info.updated_at,
+            "most_assignments": lambda d: d.summary.total_assignments,
+            "most_repairs": lambda d: d.summary.total_repairs,
+        }
+
+        return sorted(
+            devices_history, key=sort_options[sort_by], reverse=sort_by != "name"
+        )
 
     async def _add_device_record(
         self,
@@ -389,22 +406,37 @@ class DeviceAPI:
         return device
 
     async def search_devices(
-        self, payload: SearchDevicesRequest, _: GetCurrentUser, session: DBSession
+        self,
+        _: GetCurrentUser,
+        session: DBSession,
+        sort_by: Annotated[DeviceSearchSort, Query()] = "name",
+        status: Annotated[DeviceStatus | None, Query()] = None,
+        condition: Annotated[DeviceCondition | None, Query()] = None,
     ) -> list[DeviceRef]:
 
         filters = []
 
-        if payload.status is not None:
-            filters.append(Device.status == payload.status)
+        if status:
+            filters.append(Device.status == status)
 
-        if payload.condition is not None:
-            filters.append(Device.condition == payload.condition)
+        if condition:
+            filters.append(Device.condition == condition)
 
         result = await session.scalars(select(Device).where(*filters))
 
         available_devices = result.all()
 
-        return [self._device_ref(device) for device in available_devices]  # type: ignore
+        devices = [device_ref(device) for device in available_devices]
+
+        sort_options = {
+            "name": lambda d: d.name.lower(),
+            "brand": lambda d: d.brand.lower(),
+            "ram_h_to_l": lambda d: d.ram_gb,
+            "recently_added": lambda d: d.created_at,
+        }
+        is_reverse = sort_by in ("ram_h_to_l", "recently_added")
+
+        return sorted(devices, key=sort_options[sort_by], reverse=is_reverse)  # type: ignore
 
     async def get_my_devices(
         self, user: GetCurrentUser, session: DBSession
@@ -721,6 +753,44 @@ class DeviceAPI:
             message=f"Request has been sent to {decision_msg} for approval."
         )
 
+    async def revoke_device_request(
+        self, request_id: int, user: GetCurrentUser, session: DBSession
+    ) -> StatusResponse:
+
+        request = await session.scalar(
+            select(DevicesRequest)
+            .options(selectinload(DevicesRequest.approvals))
+            .where(
+                DevicesRequest.id == request_id, DevicesRequest.requested_by == user.id
+            )
+            .with_for_update()
+        )
+
+        if request is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Request not found.",
+            )
+
+        if request.status != DeviceRequestStatus.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot revoke a request with status '{request.status.value}'.",
+            )
+
+        request.pending_by = None
+        request.revoked_at = datetime.now(UTC)
+        request.status = DeviceRequestStatus.REVOKED
+
+        # Cancel outstanding approval records.
+        for approval in request.approvals:
+            if approval.decision == ApprovalDecision.PENDING:
+                approval.decision = ApprovalDecision.CANCELLED
+
+        await session.commit()
+
+        return StatusResponse(message="Device request revoked successfully.")
+
     async def process_device_request(
         self,
         payload: ProcessDeviceRequest,
@@ -736,36 +806,15 @@ class DeviceAPI:
                 message="You are not authorized to approve this request."
             )
 
-        request_approval_record = await session.scalar(
-            select(RequestApproval).where(
-                RequestApproval.request_id == payload.request_id,
-                RequestApproval.approver_id == user.id,
-            )
-        )
-
-        if not request_approval_record:
-            response.status_code = status.HTTP_403_FORBIDDEN
-            return StatusResponse(message="Request not found.")
-
-        if request_approval_record.decision != ApprovalDecision.PENDING:
-            return StatusResponse(
-                message=f"Request has already been {request_approval_record.decision.value}."
-            )
-
-        decision = (
-            ApprovalDecision.APPROVED if payload.grant else ApprovalDecision.REJECTED
-        )
-
-        request_approval_record.decision = decision
-        request_approval_record.remarks = payload.remarks
-        request_approval_record.acted_at = datetime.now(UTC)
-
         # Fetch main request record by request id and current user id
         devices_request_record = await session.scalar(
             select(DevicesRequest)
             .options(
-                selectinload(DevicesRequest.requester),
                 selectinload(DevicesRequest.device),
+                selectinload(DevicesRequest.requester),
+                selectinload(DevicesRequest.approvals).selectinload(
+                    RequestApproval.approver
+                ),
             )
             .where(
                 DevicesRequest.id == payload.request_id,
@@ -777,11 +826,16 @@ class DeviceAPI:
             response.status_code = status.HTTP_409_CONFLICT
             return StatusResponse(
                 message=(
-                    "This request has either already been processed by you or is awaiting approval from a lower-level authority."
+                    "You're not authroized to process this request or the request might not be present."
                 )
             )
 
-        if devices_request_record.status == DeviceRequestStatus.REJECTED:
+        if devices_request_record.status == DeviceRequestStatus.REVOKED:
+            return StatusResponse(
+                message="Request has already been revoked by requester."
+            )
+
+        elif devices_request_record.status == DeviceRequestStatus.REJECTED:
             return StatusResponse(message="Request has already been rejected.")
 
         elif devices_request_record.status == DeviceRequestStatus.APPROVED:
@@ -791,6 +845,36 @@ class DeviceAPI:
             return StatusResponse(
                 message="Request has already been approved and fulfilled by amdin."
             )
+
+        decision = (
+            ApprovalDecision.APPROVED if payload.grant else ApprovalDecision.REJECTED
+        )
+
+        cur_approval: RequestApproval | None = None
+        next_approvals: list[RequestApproval] = []
+
+        for approval in sorted(
+            devices_request_record.approvals, key=lambda a: a.level, reverse=False
+        ):
+            # Only capture next approvals
+            if cur_approval:
+                next_approvals.append(approval)
+
+            if (
+                approval.approver_id == user.id
+                and approval.decision == ApprovalDecision.PENDING
+            ):
+                cur_approval = approval
+
+        if not cur_approval:
+            response.status_code = status.HTTP_403_FORBIDDEN
+            return StatusResponse(
+                message="Request might not be found or has already been processed."
+            )
+
+        cur_approval.decision = decision
+        cur_approval.remarks = payload.remarks
+        cur_approval.acted_at = datetime.now(UTC)
 
         if (
             payload.grant
@@ -803,16 +887,23 @@ class DeviceAPI:
                 message="Please provide all required details (device_specs, scheduled_at) to approve request for a new device."
             )
 
-        next_request_approval: RequestApproval | None = None
         device: Device | None = None
+        next_approval = next_approvals[0] if next_approvals else None
 
         if decision == ApprovalDecision.REJECTED:
+            devices_request_record.pending_by = None
             devices_request_record.status = DeviceRequestStatus.REJECTED
+            devices_request_record.processed_at = datetime.now(UTC)
+
+            # Cancel the next approvals decision status
+            for approval in next_approvals:
+                approval.decision = ApprovalDecision.CANCELLED
 
         elif payload.grant:
             # It's a last level, approve the NewRepairDevicesRequest.status, update neccessary info and return
             if user.role == UserRole.ADMIN:
                 devices_request_record.status = DeviceRequestStatus.APPROVED
+                devices_request_record.processed_at = datetime.now(UTC)
 
                 if (
                     devices_request_record.device
@@ -883,21 +974,13 @@ class DeviceAPI:
                         await session.flush()
 
             else:  # Find next approval, update NewRepairDevicesRequest.pending_by with that approval.id, and send a email notification to both pending approval and requester
-                next_request_approval = await session.scalar(
-                    select(RequestApproval)
-                    .options(selectinload(RequestApproval.approver))
-                    .where(RequestApproval.level == request_approval_record.level + 1)
-                )
-
-                if next_request_approval:
-                    devices_request_record.pending_by = (
-                        next_request_approval.approver_id
-                    )
+                if next_approval:
+                    devices_request_record.pending_by = next_approval.approver_id
 
                 else:
                     response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
                     return StatusResponse(
-                        message="Your request was processed successfully, but the next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
+                        message="Next approver could not be identified. All changes have been rolled back. Please contact the admin for assistance."
                     )
 
         await session.commit()
@@ -910,23 +993,23 @@ class DeviceAPI:
             if devices_request_record.device
             else "Unknown",
             approved=payload.grant,
-            approver_username=request_approval_record.approver.username,
-            approver_role=request_approval_record.approver.role.value or "Unknown",  # type: ignore
+            approver_username=cur_approval.approver.username,
+            approver_role=cur_approval.approver.role.value or "Unknown",  # type: ignore
             remarks=payload.remarks,
-            next_approver_username=next_request_approval.approver.username
-            if next_request_approval
+            next_approver_username=cur_approval.approver.username
+            if cur_approval
             else None,
-            next_approver_role=next_request_approval.approver.role.value  # type: ignore
-            if next_request_approval
+            next_approver_role=cur_approval.approver.role.value  # type: ignore
+            if cur_approval
             else None,
             scheduled_at=payload.scheduled_at if payload.scheduled_at else None,
         )
 
-        if next_request_approval:
+        if next_approval:
             background_tasks.add_task(
                 self.email_manager.send_device_request_notification,
-                to_email=next_request_approval.approver.email,
-                approver_username=next_request_approval.approver.username,
+                to_email=next_approval.approver.email,
+                approver_username=next_approval.approver.username,
                 requester_username=user.username,
                 requester_name=f"{user.first_name} {user.last_name}",
                 request_id=devices_request_record.id,

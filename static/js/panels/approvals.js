@@ -14,6 +14,7 @@ const ApprovalsPanel = (() => {
     let me = "";
     let role = "pending";
     let requests = [];
+    let requestsLoadId = 0;
     let view = "awaiting";
     let firstLoad = true;
     let activeId = null;        // request shown in the panel
@@ -105,7 +106,14 @@ const ApprovalsPanel = (() => {
 
     function bindEvents() {
         $("ap-refresh").addEventListener("click", loadRequests);
-        $("ap-type").addEventListener("change", renderList);
+        $("ap-type").addEventListener("change", loadRequests);
+        $("ap-status").addEventListener("change", () => {
+            if (view === "awaiting" && $("ap-status").value) {
+                setView("all");
+                return;
+            }
+            loadRequests();
+        });
 
         $("view-switch").addEventListener("click", event => {
             const btn = event.target.closest("button[data-view]");
@@ -166,21 +174,27 @@ const ApprovalsPanel = (() => {
 
     function setView(next) {
         view = next;
+        if (next === "awaiting") $("ap-status").value = "";
         document.querySelectorAll("#view-switch button").forEach(btn =>
             btn.classList.toggle("active", btn.dataset.view === next));
-        renderList();
+        loadRequests();
     }
 
     /* ---------- Data ---------- */
 
     async function loadRequests() {
+        const loadId = ++requestsLoadId;
         listMessage("Loading requests...");
 
         try {
-            // Admins get every request. For a supervisor, only_my_developers=true returns the requests
+            // Admins get every request. For a supervisor, my_developers_requests=true returns the requests
             // of their developers, which are the ones they have to approve.
-            const response = await RequestUI.allRequests(role === "supervisor");
-            if (!response) return;
+            const response = await RequestUI.allRequests({
+                onlyMyDevelopers: role === "supervisor",
+                type: $("ap-type").value,
+                status: view === "awaiting" ? "pending" : $("ap-status").value,
+            });
+            if (!response || loadId !== requestsLoadId) return;
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
                 throw new Error(response.status === 403
@@ -190,26 +204,25 @@ const ApprovalsPanel = (() => {
 
             // De-duplicate, and for supervisors keep only requests they are actually an approver on.
             const byId = new Map();
-            (await response.json()).forEach(r => {
+            const result = await response.json();
+            if (loadId !== requestsLoadId) return;
+            result.forEach(r => {
                 const involvesMe = (r.approvals || []).some(a => a.approver_username === me);
                 if (role === "admin" || involvesMe) byId.set(r.request_id, { ...r, _date: new Date(r.requested_at) });
             });
 
             requests = [...byId.values()];
 
-            // First visit: land on "All" when nothing is waiting, so the page never looks empty.
-            if (firstLoad) {
+            // If nothing is waiting initially, show all requests so the page isn't empty.
+            if (firstLoad && view === "awaiting" && !requests.length) {
                 firstLoad = false;
-                view = requests.some(isAwaiting) ? "awaiting" : "all";
+                view = "all";
                 document.querySelectorAll("#view-switch button").forEach(btn =>
                     btn.classList.toggle("active", btn.dataset.view === view));
+                await loadRequests();
+                return;
             }
-
-            const types = [...new Set(requests.map(r => String(r.type)))].sort();
-            const selected = $("ap-type").value;
-            $("ap-type").innerHTML = `<option value="">All types</option>` +
-                types.map(t => `<option value="${escapeHTML(t)}">${escapeHTML(pretty(t))}</option>`).join("");
-            if (types.includes(selected)) $("ap-type").value = selected;
+            firstLoad = false;
 
             renderStats();
             renderList();
@@ -218,7 +231,7 @@ const ApprovalsPanel = (() => {
             if ($("ap-drawer").open) renderDrawer();
 
         } catch (error) {
-            listMessage(error.message, true);
+            if (loadId === requestsLoadId) listMessage(error.message, true);
         }
     }
 
@@ -236,9 +249,8 @@ const ApprovalsPanel = (() => {
 
     function renderList() {
         const type = $("ap-type").value;
-
         const visible = requests
-            .filter(r => (view === "all" || isAwaiting(r)) && (!type || String(r.type) === type))
+            .filter(r => view === "all" || isAwaiting(r))
             // Requests waiting for me first, then newest.
             .sort((a, b) => (isAwaiting(b) - isAwaiting(a)) || (b._date - a._date));
 

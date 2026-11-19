@@ -66,6 +66,9 @@ GMAIL_HOST=smtp.gmail.com
 GMAIL_USER=
 GMAIL_PASSWORD=           # a Gmail app password, not your normal password
 
+# 2FA 
+TWO_FACTOR_ENCRYPTION_KEY= # uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
 # Initial admin account
 INITIAL_ADMIN_EMAIL=admin@example.com
 INITIAL_ADMIN_PASSWORD=your-strong-password

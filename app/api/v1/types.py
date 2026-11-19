@@ -42,6 +42,31 @@ class DeviceRef(BaseModel):
 
 
 # -----------------------------
+# Literals
+# -----------------------------
+DeviceHistorySort = Literal[
+    "name",
+    "recently_updated",
+    "most_assignments",
+    "most_repairs",
+]
+
+DeviceSearchSort = Literal[
+    "name",
+    "brand",
+    "ram_h_to_l",
+    "recently_added",
+]
+
+
+LoginSession = Literal[
+    "active",
+    "signed_out",
+    "expired",
+]
+
+
+# -----------------------------
 # USER ENDPOINT MODELS
 # -----------------------------
 class UserPartialUpdate(BaseModel):
@@ -105,24 +130,23 @@ class ActiveApprovalsResponse(BaseModel):
 
 
 class LoginHistoryResponse(BaseModel):
-    username: str
+    user_info: UserRef
+    session: LoginSession
     ip: str | None = None
-    role: UserRole | None = None
     logged_in_at: datetime
     logged_out_at: datetime | None = None
 
 
 class JoinRequestsResponse(BaseModel):
     id: int
-    requester_role: UserRole
-    requester_username: str
-    approval_role: UserRole
-    approval_username: str
-    request_note: str | None
+
+    requester_info: UserRef
+    approval_info: UserRef
+    processor_info: UserRef | None
+
+    note: str | None
     status: JoinRequestStatus
     requested_at: datetime
-    processed_by_username: str | None
-    processed_by_role: UserRole | None
     processed_at: datetime | None
 
 
@@ -192,6 +216,7 @@ class AllDevicesRequestsResponse(BaseModel):
     requested_at: datetime
     type: DeviceRequestType
     status: DeviceRequestStatus
+    processed_at: datetime | None = None
     device_info: DeviceRef | None = None
     requested_specs: str | None = None
     issue: str | None
@@ -318,11 +343,6 @@ class AssignedByDevicesResponse(BaseModel):
 class SearchOptionsResponse(BaseModel):
     statuses: list[DeviceStatus]
     conditions: list[DeviceCondition]
-
-
-class SearchDevicesRequest(BaseModel):
-    status: DeviceStatus | None = None
-    condition: DeviceCondition | None = None
 
 
 # -----------------------------

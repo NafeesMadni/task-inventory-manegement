@@ -36,15 +36,17 @@ class DeviceRequestType(str, Enum):
 
 class DeviceRequestStatus(str, Enum):
     PENDING = "pending"
-    APPROVED = "approved"
-    FULFILLED = "fulfilled"
     REJECTED = "rejected"
+    APPROVED = "approved"
+    REVOKED = "revoked"
+    FULFILLED = "fulfilled"
 
 
 class ApprovalDecision(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 
 class RepairStatus(str, Enum):

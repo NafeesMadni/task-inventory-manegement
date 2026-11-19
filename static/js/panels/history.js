@@ -70,7 +70,11 @@ const HistoryPanel = (() => {
         message("Loading device history...");
 
         try {
-            const response = await api(DEVICES_HISTORY_PATH);
+            const params = new URLSearchParams({ sort_by: $("hi-sort").value });
+            const status = $("hi-status").value;
+            if (status) params.set("status", status);
+
+            const response = await api(`${DEVICES_HISTORY_PATH}?${params}`);
             if (!response) return;
             if (response.status === 403) throw new Error("Only admins can view the device history.");
             if (!response.ok) throw new Error("Unable to load the device history.");
@@ -85,10 +89,8 @@ const HistoryPanel = (() => {
                     ...item.assignments.flatMap(a => [a.assigned_to?.username, a.assigned_by?.username]),
                     ...item.repairs.map(r => r.requested_by?.username),
                 ].filter(v => v != null).join(" ").toLowerCase(),
-                _updated: new Date(item.device_info.updated_at).getTime() || 0,
             }));
 
-            fillStatuses();
             renderStats();
             render();
 
@@ -98,17 +100,6 @@ const HistoryPanel = (() => {
         } catch (error) {
             message(error.message, true);
         }
-    }
-
-    function fillStatuses() {
-        const select = $("hi-status");
-        const selected = select.value;
-        const statuses = [...new Set(items.map(i => String(i.device_info.status)))].sort();
-
-        select.innerHTML = `<option value="">All statuses</option>` +
-            statuses.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(pretty(s))}</option>`).join("");
-
-        if (statuses.includes(selected)) select.value = selected;
     }
 
     function renderStats() {
@@ -122,37 +113,18 @@ const HistoryPanel = (() => {
 
     function render() {
         const search = $("hi-search").value.trim().toLowerCase();
-        const status = $("hi-status").value;
-        const activity = $("hi-activity").value;
-        const sort = $("hi-sort").value;
 
         const visible = items.filter(item => {
-            const { device_info: d, summary: s } = item;
-
             if (search && !item._hay.includes(search)) return false;
-            if (status && String(d.status) !== status) return false;
-
-            if (activity === "assigned" && !s.current_holder) return false;
-            if (activity === "repair" && !s.under_repair) return false;
-            if (activity === "repaired" && s.total_repairs === 0) return false;
-            if (activity === "never" && s.total_assignments > 0) return false;
 
             return true;
-        });
-
-        visible.sort((a, b) => {
-            if (sort === "updated") return b._updated - a._updated;
-            if (sort === "repairs") return b.summary.total_repairs - a.summary.total_repairs;
-            if (sort === "assignments") return b.summary.total_assignments - a.summary.total_assignments;
-
-            return String(a.device_info.name).localeCompare(String(b.device_info.name), undefined, { sensitivity: "base" });
         });
 
         $("hi-count").textContent = visible.length === items.length
             ? plural(items.length, "device")
             : `${visible.length} of ${items.length} devices`;
 
-        if (!items.length) {
+        if (!items.length && !$("hi-status").value) {
             message("No devices in the inventory yet.");
             return;
         }
@@ -393,14 +365,13 @@ const HistoryPanel = (() => {
         $("hi-refresh").addEventListener("click", load);
 
         $("hi-search").addEventListener("input", render);
-        ["hi-status", "hi-activity", "hi-sort"].forEach(id => $(id).addEventListener("change", render));
+        ["hi-status", "hi-sort"].forEach(id => $(id).addEventListener("change", load));
 
         $("hi-clear").addEventListener("click", () => {
             $("hi-search").value = "";
             $("hi-status").value = "";
-            $("hi-activity").value = "";
             $("hi-sort").value = "name";
-            render();
+            load();
         });
 
         // Click (or Enter / Space) on a device row opens its panel.
