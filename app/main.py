@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from redis_fastapi import FastAPIRedis
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -33,6 +34,8 @@ FastAPIRedis(app).lifespan().caching().rate_limiting()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+templates = Jinja2Templates(directory=BASE_DIR / "static")
 
 
 @app.get("/api/health")
@@ -68,13 +71,21 @@ def profile():
 
 
 @app.get("/signup", include_in_schema=False)
-def sign():
-    return FileResponse(BASE_DIR / "static" / "signup.html")
+def sign(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="signup.html",
+        context={"turnstile_site_key": get_settings().TURNSTILE_SITE_KEY},
+    )
 
 
 @app.get("/signin", include_in_schema=False)
-def signin():
-    return FileResponse(BASE_DIR / "static" / "signin.html")
+def signin(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="signin.html",
+        context={"turnstile_site_key": get_settings().TURNSTILE_SITE_KEY},
+    )
 
 
 @app.get("/2fa/verify", include_in_schema=False)
