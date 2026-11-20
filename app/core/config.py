@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = Field(alias="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: str = Field(alias="GOOGLE_CLIENT_SECRET")
 
+    TURNSTILE_SITE_KEY: str = Field(alias="TURNSTILE_SITE_KEY")
     TURNSTILE_SECRET_KEY: str = Field(alias="TURNSTILE_SECRET_KEY")
     SITEVERIFY_URL: str = Field(alias="SITEVERIFY_URL")
 

@@ -83,6 +83,7 @@ GOOGLE_CLIENT_SECRET=
 SESSION_SECRET=           # openssl rand -hex 32
 
 # Cloudflare Turnstile
+TURNSTILE_SITE_KEY= # Public key for frontend
 TURNSTILE_SECRET_KEY=
 SITEVERIFY_URL=https://challenges.cloudflare.com/turnstile/v0/siteverify
 
